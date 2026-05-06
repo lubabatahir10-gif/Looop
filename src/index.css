@@ -1,0 +1,77 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&family=Inter:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  /* Theme-aware variables */
+  --color-bg-base: var(--bg-base, #ffffff);
+  --color-bg-surface: var(--bg-surface, #ffffff);
+  --color-fg-base: var(--fg-base, #1a1a1a);
+  --color-fg-muted: var(--fg-muted, #737373);
+  --color-accent-primary: var(--accent-primary, #6366f1);
+  --color-border-subtle: var(--border-subtle, #f0f0f0);
+}
+
+@layer base {
+  :root {
+    --bg-base: #fcfcfc;
+    --bg-surface: #ffffff;
+    --fg-base: #171717;
+    --fg-muted: #666666;
+    --accent-primary: #6366f1;
+    --border-subtle: #f1f1f1;
+  }
+
+  [data-mode="dark"] {
+    --bg-base: #0a0a0a;
+    --bg-surface: #141414;
+    --fg-base: #f5f5f5;
+    --fg-muted: #a3a3a3;
+    --accent-primary: #818cf8;
+    --border-subtle: #1f1f1f;
+  }
+
+  /* Theme Overrides (Applied to light mode by default) */
+  [data-theme="Muted Blue"] { --accent-primary: #475569; }
+  [data-theme="Soft Sage"] { --accent-primary: #1e3a3a; }
+  [data-theme="Dusty Rose"] { --accent-primary: #be185d; }
+  [data-theme="Minimal Slate"] { --accent-primary: #262626; }
+  
+  /* Dark Mode specific theme adjustments if needed */
+  [data-mode="dark"][data-theme="Muted Blue"] { --accent-primary: #94a3b8; }
+  [data-mode="dark"][data-theme="Soft Sage"] { --accent-primary: #a7f3d0; }
+  [data-mode="dark"][data-theme="Dusty Rose"] { --accent-primary: #fda4af; }
+  [data-mode="dark"][data-theme="Minimal Slate"] { --accent-primary: #737373; }
+
+  body {
+    @apply bg-bg-base text-fg-base antialiased font-sans;
+  }
+}
+
+.glass {
+  @apply bg-bg-surface/80 backdrop-blur-md border border-border-subtle shadow-sm;
+}
+
+.card-minimal {
+  @apply bg-bg-surface rounded-3xl border border-border-subtle p-6 transition-all duration-300;
+}
+
+.interactive-scale {
+  @apply transition-transform duration-200 active:scale-95;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  @apply bg-border-subtle rounded-full;
+}
+
+input[type="time"]::-webkit-calendar-picker-indicator {
+  @apply opacity-50 hover:opacity-100 cursor-pointer transition-opacity;
+}
