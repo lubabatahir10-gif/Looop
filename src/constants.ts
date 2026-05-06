@@ -20,6 +20,17 @@ export const TASK_TEMPLATES = [
   { title: "Finding missing materials", icon: "🔍" },
 ];
 
+export const MOTIVATING_DESCRIPTIONS = [
+  "You’re someone who gets things done… eventually, but always. ✨",
+  "Lowkey overwhelmed, but still showing up. That counts. 🎀",
+  "Not perfect, but consistent. And that’s rare. 🍭",
+  "You handle more than you give yourself credit for. 🌟",
+  "Manifesting a productive day. No cap. 🧢",
+  "Iconic behavior: actually finishing the pile. 👀",
+  "Main character energy, even with the grading backlog. 💅",
+  "It's the persistence for me. Stay in the loop. 🍬",
+  "Vibe check: Productivity is 10/10 today. ⚡"
+];
 export const NAG_MESSAGES: Record<Tone, { tasks: string[]; notebooks: string[]; general: string[] }> = {
   Professional: {
     tasks: [

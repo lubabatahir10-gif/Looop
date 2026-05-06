@@ -16,6 +16,10 @@ export interface UserProfile {
   nagIntensity: Intensity;
   themeMode: ThemeMode;
   colorTheme: ColorTheme;
+  notificationsEnabled: boolean;
+  notificationTone: string;
+  reminderFrequency: number;
+  profilePicture?: string;
 }
 
 export interface Task {

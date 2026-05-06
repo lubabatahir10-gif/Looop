@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { NotificationService, NOTIFICATION_TONES } from './lib/notifications';
 import { 
   CheckSquare, 
   BookOpen, 
@@ -19,10 +20,15 @@ import {
   Moon,
   ClipboardCheck,
   MessageSquare,
-  BookCheck
+  BookCheck,
+  Volume2,
+  BellRing,
+  Camera,
+  Edit2,
+  X
 } from 'lucide-react';
 import { Task, ClassSection, UserProfile, Status, AppData, Tone, Intensity, Student, TrackerCategory, ThemeMode, ColorTheme } from './types';
-import { SALUTATIONS, TONES, INTENSITIES, NAG_MESSAGES, TASK_TEMPLATES, THEME_MODES, COLOR_THEMES } from './constants';
+import { SALUTATIONS, TONES, INTENSITIES, NAG_MESSAGES, TASK_TEMPLATES, THEME_MODES, COLOR_THEMES, MOTIVATING_DESCRIPTIONS } from './constants';
 
 const STORAGE_KEY = 'loooop_data_v1';
 
@@ -33,7 +39,11 @@ const INITIAL_DATA: AppData = {
     tone: 'Professional',
     nagIntensity: 'Medium',
     themeMode: 'system',
-    colorTheme: 'Classic'
+    colorTheme: 'Classic',
+    notificationsEnabled: false,
+    notificationTone: 'chime',
+    reminderFrequency: 5,
+    profilePicture: undefined
   },
   tasks: [],
   sections: []
@@ -74,9 +84,18 @@ export default function App() {
     const saved = localStorage.getItem(STORAGE_KEY);
     const parsed = saved ? JSON.parse(saved) : INITIAL_DATA;
     // Migrate old data
-    if (parsed.profile && !parsed.profile.themeMode) {
-      parsed.profile.themeMode = 'system';
-      parsed.profile.colorTheme = 'Classic';
+    if (parsed.profile) {
+      if (!parsed.profile.themeMode) {
+        parsed.profile.themeMode = 'system';
+        parsed.profile.colorTheme = 'Classic';
+      }
+      // Migrate old sound IDs
+      if (parsed.profile.notificationTone === 'sparkle' || parsed.profile.notificationTone === 'dreamy') {
+        parsed.profile.notificationTone = 'drop';
+      }
+      if (parsed.profile.notificationTone === 'minimal') {
+        parsed.profile.notificationTone = 'sweet';
+      }
     }
     if (parsed.sections) {
       parsed.sections = parsed.sections.map((s: any) => {
@@ -126,9 +145,17 @@ export default function App() {
     return parsed;
   });
 
-  const [activeTab, setActiveTab] = useState<'tasks' | 'notebooks' | 'reminders' | 'settings'>('tasks');
+  const [activeTab, setActiveTab] = useState<'tasks' | 'notebooks' | 'reminders' | 'settings' | 'profile'>('tasks');
   const [isSetup, setIsSetup] = useState(!data.profile.name);
   const [activeNag, setActiveNag] = useState<string | null>(null);
+  const [motivatingQuote, setMotivatingQuote] = useState('');
+
+  // Randomize motivating quote when entering profile
+  useEffect(() => {
+    if (activeTab === 'profile') {
+      setMotivatingQuote(MOTIVATING_DESCRIPTIONS[Math.floor(Math.random() * MOTIVATING_DESCRIPTIONS.length)]);
+    }
+  }, [activeTab]);
 
   // Theme Management
   useEffect(() => {
@@ -137,13 +164,41 @@ export default function App() {
     
     if (mode === 'system') {
       const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      root.setAttribute('data-mode', prefersDark ? 'dark' : 'light');
+      if (root.getAttribute('data-mode') !== (prefersDark ? 'dark' : 'light')) {
+        root.setAttribute('data-mode', prefersDark ? 'dark' : 'light');
+      }
     } else {
-      root.setAttribute('data-mode', mode);
+      if (root.getAttribute('data-mode') !== mode) {
+        root.setAttribute('data-mode', mode);
+      }
     }
     
-    root.setAttribute('data-theme', data.profile.colorTheme);
+    if (root.getAttribute('data-theme') !== data.profile.colorTheme) {
+      root.setAttribute('data-theme', data.profile.colorTheme);
+    }
   }, [data.profile.themeMode, data.profile.colorTheme]);
+
+  // Migration and persistence logic
+  useEffect(() => {
+    // Service Worker Registration
+    NotificationService.init();
+
+    // Listen for notification actions from SW
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data && event.data.type === 'NOTIFICATION_ACTION') {
+        const { action, taskId } = event.data;
+        if (action === 'done' && taskId) {
+          toggleTask(taskId);
+        }
+        // 'onit' and 'later' just bring the user back, handled by SW focus()
+      }
+    };
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', handleMessage);
+      return () => navigator.serviceWorker.removeEventListener('message', handleMessage);
+    }
+  }, []);
 
   // Persistence logic
   useEffect(() => {
@@ -155,12 +210,7 @@ export default function App() {
     if (isSetup) return;
 
     const getInterval = () => {
-      switch (data.profile.nagIntensity) {
-        case 'High': return 120000; // 2 min
-        case 'Medium': return 300000; // 5 min
-        case 'Low': return 900000; // 15 min
-        default: return 300000;
-      }
+      return (data.profile.reminderFrequency || 5) * 60000;
     };
 
     const interval = setInterval(() => {
@@ -176,7 +226,16 @@ export default function App() {
       const salutation = data.profile.salutation === 'Custom' ? '' : data.profile.salutation;
       const finalMsg = randomMsg.replace('{name}', `${salutation} ${data.profile.name}`.trim());
       
-      setActiveNag(finalMsg);
+      // Trigger notification if enabled
+      if (data.profile.notificationsEnabled) {
+        NotificationService.show('loooop Nudge', finalMsg, undefined, data.profile.notificationTone).then(result => {
+           if (result && result.type === 'in-app') {
+             setActiveNag(finalMsg);
+           }
+        });
+      } else {
+        setActiveNag(finalMsg);
+      }
     }, getInterval());
 
     return () => clearInterval(interval);
@@ -299,7 +358,7 @@ export default function App() {
                 <label className="block text-xs font-bold text-fg-muted uppercase tracking-widest mb-2 px-1">Your Details</label>
                 <div className="flex gap-2">
                   <select 
-                    value={data.profile.salutation}
+                    value={data.profile.salutation || 'Miss'}
                     onChange={e => setData(prev => ({ ...prev, profile: { ...prev.profile, salutation: e.target.value } }))}
                     className="bg-bg-base border border-border-subtle rounded-2xl px-4 py-3 text-sm focus:ring-2 focus:ring-accent-primary outline-none appearance-none"
                   >
@@ -309,7 +368,7 @@ export default function App() {
                     type="text" 
                     required
                     placeholder="Full Name"
-                    value={data.profile.name}
+                    value={data.profile.name || ''}
                     onChange={e => setData(prev => ({ ...prev, profile: { ...prev.profile, name: e.target.value } }))}
                     className="flex-1 bg-bg-base border border-border-subtle rounded-2xl px-5 py-3 text-sm focus:ring-2 focus:ring-accent-primary outline-none"
                   />
@@ -320,14 +379,14 @@ export default function App() {
                 <label className="block text-xs font-bold text-fg-muted uppercase tracking-widest mb-2 px-1">Tone & Intensity</label>
                 <div className="grid grid-cols-2 gap-3">
                   <select 
-                    value={data.profile.tone}
+                    value={data.profile.tone || 'Professional'}
                     onChange={e => setData(prev => ({ ...prev, profile: { ...prev.profile, tone: e.target.value as Tone } }))}
                     className="bg-bg-base border border-border-subtle rounded-2xl px-4 py-3 text-sm focus:ring-2 focus:ring-accent-primary outline-none"
                   >
                     {TONES.map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
                   <select 
-                    value={data.profile.nagIntensity}
+                    value={data.profile.nagIntensity || 'Medium'}
                     onChange={e => setData(prev => ({ ...prev, profile: { ...prev.profile, nagIntensity: e.target.value as Intensity } }))}
                     className="bg-bg-base border border-border-subtle rounded-2xl px-4 py-3 text-sm focus:ring-2 focus:ring-accent-primary outline-none"
                   >
@@ -414,9 +473,16 @@ export default function App() {
               <p className="text-[10px] text-fg-muted font-bold uppercase tracking-widest leading-none mb-1">Welcome back</p>
               <p className="text-sm font-semibold">{data.profile.salutation} {data.profile.name}</p>
             </div>
-            <div className="w-10 h-10 bg-bg-base rounded-full border border-border-subtle flex items-center justify-center">
-              <User size={18} className="text-fg-muted" />
-            </div>
+            <button 
+              onClick={() => setActiveTab('profile')}
+              className={`w-10 h-10 rounded-full border flex items-center justify-center overflow-hidden transition-all ${activeTab === 'profile' ? 'border-accent-primary ring-2 ring-accent-primary/20' : 'border-border-subtle hover:border-accent-primary/50'}`}
+            >
+              {data.profile.profilePicture ? (
+                <img src={data.profile.profilePicture} alt="Profile" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+              ) : (
+                <User size={18} className="text-fg-muted" />
+              )}
+            </button>
           </div>
         </div>
       </header>
@@ -474,7 +540,20 @@ export default function App() {
             />
           )}
           {activeTab === 'reminders' && <RemindersSummary data={data} />}
-          {activeTab === 'settings' && <SettingsView data={data} onUpdateProfile={(p) => setData(prev => ({ ...prev, profile: p }))} />}
+          {activeTab === 'settings' && (
+            <SettingsView 
+              data={data} 
+              onUpdateProfile={(p) => setData(prev => ({ ...prev, profile: p }))} 
+              onNotify={setActiveNag}
+            />
+          )}
+          {activeTab === 'profile' && (
+            <ProfileView 
+              data={data} 
+              quote={motivatingQuote}
+              onUpdateProfile={(p) => setData(prev => ({ ...prev, profile: p }))} 
+            />
+          )}
         </motion.div>
       </main>
 
@@ -542,7 +621,7 @@ function TasksView({ data, onToggle, onDelete, onAdd }: any) {
               autoFocus
               type="text" 
               placeholder="What's the plan?"
-              value={newTitle}
+              value={newTitle || ''}
               onChange={e => setNewTitle(e.target.value)}
               className="w-full text-lg font-medium bg-transparent border-b-2 border-border-subtle py-2 focus:border-accent-primary outline-none text-fg-base placeholder:text-fg-muted transition-colors"
             />
@@ -573,7 +652,7 @@ function TasksView({ data, onToggle, onDelete, onAdd }: any) {
                   <label className="block text-[10px] font-bold text-fg-muted uppercase tracking-widest mb-3">Select Time</label>
                   <input 
                     type="time" 
-                    value={time}
+                    value={time || '08:00'}
                     onChange={e => setTime(e.target.value)}
                     className="bg-bg-base border border-border-subtle px-4 py-2.5 rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-accent-primary w-full"
                   />
@@ -759,7 +838,7 @@ function NotebookView({ data, onUpdate, onDelete, onAdd, onUpdateStudents, onAdd
                   autoFocus
                   type="text" 
                   placeholder="e.g. Grade 10 - Section B"
-                  value={name}
+                  value={name || ''}
                   onChange={e => setName(e.target.value)}
                   className="w-full bg-bg-base border border-border-subtle px-5 py-3 rounded-2xl outline-none focus:border-fg-muted/40 transition-all text-fg-base"
                 />
@@ -769,7 +848,7 @@ function NotebookView({ data, onUpdate, onDelete, onAdd, onUpdateStudents, onAdd
                 <input 
                   type="text" 
                   placeholder="e.g. English Literature"
-                  value={subject}
+                  value={subject || ''}
                   onChange={e => setSubject(e.target.value)}
                   className="w-full bg-bg-base border border-border-subtle px-5 py-3 rounded-2xl outline-none focus:border-fg-muted/40 transition-all text-fg-base"
                 />
@@ -923,7 +1002,7 @@ function NotebookView({ data, onUpdate, onDelete, onAdd, onUpdateStudents, onAdd
                         autoFocus
                         type="text"
                         placeholder="Section Name (e.g. Unit Test 1)"
-                        value={newCategoryName}
+                        value={newCategoryName || ''}
                         onChange={e => setNewCategoryName(e.target.value)}
                         className="flex-1 bg-[#1A1D24] border border-white/5 px-5 py-3 rounded-2xl outline-none focus:border-[#4F8CFF]/50 text-[#E6EAF2] text-sm font-medium"
                       />
@@ -968,7 +1047,7 @@ function NotebookView({ data, onUpdate, onDelete, onAdd, onUpdateStudents, onAdd
                        <div className="flex gap-2">
                           <input 
                              type="text" 
-                             value={individualName}
+                             value={individualName || ''}
                              onChange={e => setIndividualName(e.target.value)}
                              placeholder="Full name"
                              className="flex-1 bg-[#0F1115] border border-white/5 rounded-2xl px-5 py-3 text-[#E6EAF2] text-sm focus:border-[#4F8CFF]/50 outline-none transition-all"
@@ -982,7 +1061,7 @@ function NotebookView({ data, onUpdate, onDelete, onAdd, onUpdateStudents, onAdd
                     <div className="space-y-3">
                        <label className="text-[10px] font-black uppercase tracking-[0.2em] text-[#9AA3B2] px-1">Batch Import List</label>
                        <textarea 
-                          value={batchNames}
+                          value={batchNames || ''}
                           onChange={e => setBatchNames(e.target.value)}
                           placeholder="Paste names here... (one per line)"
                           className="w-full h-32 bg-[#0F1115] border border-white/5 rounded-[2rem] p-5 text-[#E6EAF2] text-sm font-medium outline-none focus:border-[#4F8CFF]/30 resize-none transition-all"
@@ -1215,7 +1294,7 @@ function RemindersSummary({ data }: any) {
   );
 }
 
-function SettingsView({ data, onUpdateProfile }: any) {
+function SettingsView({ data, onUpdateProfile, onNotify }: any) {
   return (
     <div className="space-y-10">
       <div className="space-y-1">
@@ -1241,7 +1320,7 @@ function SettingsView({ data, onUpdateProfile }: any) {
                  <div>
                     <label className="text-[10px] font-bold uppercase tracking-widest text-fg-muted mb-2 block px-1">Engagement Style</label>
                     <select 
-                      value={data.profile.tone}
+                      value={data.profile.tone || 'Professional'}
                       onChange={e => onUpdateProfile({ ...data.profile, tone: e.target.value as Tone })}
                       className="w-full bg-bg-base border border-border-subtle rounded-2xl px-5 py-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-accent-primary appearance-none"
                     >
@@ -1251,7 +1330,7 @@ function SettingsView({ data, onUpdateProfile }: any) {
                  <div>
                     <label className="text-[10px] font-bold uppercase tracking-widest text-fg-muted mb-2 block px-1">Reminder Pressure</label>
                     <select 
-                      value={data.profile.nagIntensity}
+                      value={data.profile.nagIntensity || 'Medium'}
                       onChange={e => onUpdateProfile({ ...data.profile, nagIntensity: e.target.value as Intensity })}
                       className="w-full bg-bg-base border border-border-subtle rounded-2xl px-5 py-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-accent-primary appearance-none"
                     >
@@ -1263,40 +1342,114 @@ function SettingsView({ data, onUpdateProfile }: any) {
         </Card>
 
         {/* Theme Settings */}
-        <Card className="p-8 space-y-8 border border-border-subtle bg-bg-surface">
-           <div className="space-y-6">
-              <div>
-                <label className="text-[10px] font-bold uppercase tracking-widest text-fg-muted mb-4 block px-1">Appearance</label>
-                <div className="grid grid-cols-3 gap-3">
-                   {THEME_MODES.map(mode => (
-                     <button
-                       key={mode}
-                       onClick={() => onUpdateProfile({ ...data.profile, themeMode: mode })}
-                       className={`flex flex-col items-center gap-2 py-4 px-3 rounded-2xl border transition-all ${data.profile.themeMode === mode ? 'bg-accent-primary/10 border-accent-primary text-accent-primary' : 'bg-bg-base border-border-subtle text-fg-muted hover:border-accent-primary/30'}`}
-                     >
-                        {mode === 'light' ? <Sun size={20} /> : mode === 'dark' ? <Moon size={20} /> : <div className="flex gap-0.5"><Sun size={12} /> <Moon size={12} /></div>}
-                        <span className="text-[10px] font-bold uppercase tracking-widest">{mode}</span>
-                     </button>
-                   ))}
+        <div className="space-y-8">
+          <Card className="p-8 space-y-8 border border-border-subtle bg-bg-surface">
+             <div className="space-y-6">
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-fg-muted mb-4 block px-1">Appearance</label>
+                  <div className="grid grid-cols-3 gap-3">
+                     {THEME_MODES.map(mode => (
+                       <button
+                         key={mode}
+                         onClick={() => onUpdateProfile({ ...data.profile, themeMode: mode })}
+                         className={`flex flex-col items-center gap-2 py-4 px-3 rounded-2xl border transition-all ${data.profile.themeMode === mode ? 'bg-accent-primary/10 border-accent-primary text-accent-primary' : 'bg-bg-base border-border-subtle text-fg-muted hover:border-accent-primary/30'}`}
+                       >
+                          {mode === 'light' ? <Sun size={20} /> : mode === 'dark' ? <Moon size={20} /> : <div className="flex gap-0.5"><Sun size={12} /> <Moon size={12} /></div>}
+                          <span className="text-[10px] font-bold uppercase tracking-widest">{mode}</span>
+                       </button>
+                     ))}
+                  </div>
                 </div>
+
+                <div className="space-y-4">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-fg-muted mb-4 block px-1">Accent Color</label>
+                  <div className="flex flex-wrap gap-3">
+                     {COLOR_THEMES.map(theme => (
+                       <button
+                         key={theme}
+                         onClick={() => onUpdateProfile({ ...data.profile, colorTheme: theme })}
+                         className={`h-10 px-4 rounded-xl text-[10px] font-bold uppercase tracking-widest border transition-all ${data.profile.colorTheme === theme ? 'bg-accent-primary text-white border-accent-primary' : 'bg-bg-base text-fg-muted border-border-subtle hover:border-accent-primary/30'}`}
+                       >
+                          {theme}
+                       </button>
+                     ))}
+                  </div>
+                </div>
+             </div>
+          </Card>
+
+          <Card className="p-8 space-y-8 border border-border-subtle bg-bg-surface">
+            <div className="space-y-6">
+              <div className="flex items-center justify-between border-b border-border-subtle pb-6">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-accent-primary/10 rounded-2xl flex items-center justify-center text-accent-primary">
+                    <BellRing size={24} />
+                  </div>
+                  <div>
+                    <h4 className="text-xl font-bold">Notifications</h4>
+                    <p className="text-[10px] text-fg-muted font-bold uppercase tracking-widest">Browser & In-App</p>
+                  </div>
+                </div>
+                <button
+                  onClick={async () => {
+                    const enabled = !data.profile.notificationsEnabled;
+                    if (enabled) {
+                      const status = await NotificationService.requestPermission();
+                      if (status === 'denied') {
+                        onNotify("Browser notifications are blocked. I'll use in-app popups instead! ✨");
+                      } else if (status === 'unsupported') {
+                        onNotify("Your browser doesn't support notifications, but I'll nudge you here! 🎀");
+                      }
+                    }
+                    onUpdateProfile({ ...data.profile, notificationsEnabled: enabled });
+                  }}
+                  className={`w-14 h-8 rounded-full border transition-all relative ${data.profile.notificationsEnabled ? 'bg-accent-primary border-accent-primary' : 'bg-bg-base border-border-subtle'}`}
+                >
+                  <motion.div 
+                    animate={{ x: data.profile.notificationsEnabled ? 24 : 4 }}
+                    className="w-6 h-6 bg-white rounded-full absolute top-1 shadow-sm"
+                  />
+                </button>
               </div>
 
-              <div className="space-y-4">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-fg-muted mb-4 block px-1">Accent Color</label>
-                <div className="flex flex-wrap gap-3">
-                   {COLOR_THEMES.map(theme => (
-                     <button
-                       key={theme}
-                       onClick={() => onUpdateProfile({ ...data.profile, colorTheme: theme })}
-                       className={`h-10 px-4 rounded-xl text-[10px] font-bold uppercase tracking-widest border transition-all ${data.profile.colorTheme === theme ? 'bg-accent-primary text-white border-accent-primary' : 'bg-bg-base text-fg-muted border-border-subtle hover:border-accent-primary/30'}`}
-                     >
-                        {theme}
-                     </button>
-                   ))}
+              <div className="grid gap-6">
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-fg-muted mb-2 block px-1">Nudge Interval</label>
+                  <div className="flex items-center gap-4">
+                    <input 
+                      type="range"
+                      min="1"
+                      max="60"
+                      value={data.profile.reminderFrequency || 5}
+                      onChange={e => onUpdateProfile({ ...data.profile, reminderFrequency: parseInt(e.target.value) })}
+                      className="flex-1 accent-accent-primary"
+                    />
+                    <span className="text-sm font-bold w-16 text-center tabular-nums">{data.profile.reminderFrequency}m</span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-fg-muted mb-2 block px-1">Notification Tone</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {NOTIFICATION_TONES.map(tone => (
+                      <button
+                        key={tone.id}
+                        onClick={() => {
+                          onUpdateProfile({ ...data.profile, notificationTone: tone.id });
+                          NotificationService.playTone(tone.id);
+                        }}
+                        className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-left transition-all ${data.profile.notificationTone === tone.id ? 'bg-accent-primary/10 border-accent-primary text-accent-primary' : 'bg-bg-base border-border-subtle text-fg-muted hover:border-accent-primary/30'}`}
+                      >
+                         <Volume2 size={14} />
+                         <span className="text-xs font-bold">{tone.name}</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
-           </div>
-        </Card>
+            </div>
+          </Card>
+        </div>
       </div>
 
       <div className="flex justify-center pt-10">
@@ -1311,6 +1464,155 @@ function SettingsView({ data, onUpdateProfile }: any) {
          >
            Reset Workspace
          </button>
+      </div>
+    </div>
+  );
+}
+
+function ProfileView({ data, quote, onUpdateProfile }: any) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState(data.profile.name || '');
+  const [editSalutation, setEditSalutation] = useState(data.profile.salutation || 'Sir');
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 1024 * 512) {
+        alert('Image is too large. Please select an image under 512KB.');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        onUpdateProfile({ ...data.profile, profilePicture: reader.result as string });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleSave = () => {
+    onUpdateProfile({ 
+      ...data.profile, 
+      name: editName, 
+      salutation: editSalutation 
+    });
+    setIsEditing(false);
+  };
+
+  return (
+    <div className="space-y-8 pb-10">
+      <div className="flex flex-col items-center text-center space-y-6">
+        <div className="relative group">
+          <div className="w-32 h-32 rounded-full border-4 border-accent-primary flex items-center justify-center overflow-hidden bg-bg-surface shadow-lg">
+            {data.profile.profilePicture ? (
+              <img src={data.profile.profilePicture} alt="Profile" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+            ) : (
+              <User size={48} className="text-fg-muted" />
+            )}
+          </div>
+          <button 
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="absolute bottom-1 right-1 bg-accent-primary text-white p-2.5 rounded-full shadow-lg hover:scale-110 active:scale-95 transition-all"
+          >
+            <Camera size={18} />
+          </button>
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            onChange={handleImageUpload} 
+            accept="image/*" 
+            className="hidden" 
+          />
+        </div>
+
+        <div className="space-y-2">
+          {!isEditing ? (
+            <>
+              <div className="flex items-center justify-center gap-3">
+                <h2 className="text-3xl font-bold tracking-tight">
+                  {data.profile.salutation} {data.profile.name}
+                </h2>
+                <button 
+                  onClick={() => setIsEditing(true)}
+                  className="text-fg-muted hover:text-accent-primary transition-colors"
+                >
+                  <Edit2 size={18} />
+                </button>
+              </div>
+              <p className="text-fg-muted font-medium max-w-xs mx-auto text-sm leading-relaxed px-4 italic">
+                {quote}
+              </p>
+            </>
+          ) : (
+            <Card className="p-6 space-y-4 max-w-sm mx-auto border-accent-primary/20 bg-accent-primary/5">
+              <div className="flex justify-between items-center mb-2">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-fg-muted">Edit Identity</p>
+                <button onClick={() => setIsEditing(false)} className="text-fg-muted hover:text-fg-base">
+                  <X size={16} />
+                </button>
+              </div>
+              <div className="flex flex-col gap-3">
+                <div className="flex gap-2">
+                  <select 
+                    value={editSalutation}
+                    onChange={e => setEditSalutation(e.target.value)}
+                    className="bg-bg-base border border-border-subtle rounded-xl px-2 py-2 text-sm focus:ring-2 focus:ring-accent-primary outline-none"
+                  >
+                    {SALUTATIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                  <input 
+                    type="text" 
+                    value={editName}
+                    onChange={e => setEditName(e.target.value)}
+                    placeholder="Full Name"
+                    className="flex-1 bg-bg-base border border-border-subtle rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-accent-primary outline-none"
+                  />
+                </div>
+                <Button onClick={handleSave} className="w-full h-10 rounded-xl text-sm">
+                  Save Changes
+                </Button>
+              </div>
+            </Card>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
+        <Card className="p-6 border-border-subtle/50 flex items-center gap-5">
+          <div className="w-12 h-12 bg-accent-primary/10 rounded-2xl flex items-center justify-center text-accent-primary shrink-0">
+             <ClipboardCheck size={24} />
+          </div>
+          <div>
+            <p className="text-[10px] font-bold text-fg-muted uppercase tracking-widest leading-none mb-1">Consistency</p>
+            <p className="text-lg font-bold">Top Tier</p>
+            <p className="text-[10px] text-fg-muted italic">You’re actually doing it. ✨</p>
+          </div>
+        </Card>
+        <Card className="p-6 border-border-subtle/50 flex items-center gap-5">
+          <div className="w-12 h-12 bg-purple-500/10 rounded-2xl flex items-center justify-center text-purple-500 shrink-0">
+             <MessageSquare size={24} />
+          </div>
+          <div>
+            <p className="text-[10px] font-bold text-fg-muted uppercase tracking-widest leading-none mb-1">Vibe Status</p>
+            <p className="text-lg font-bold transition-colors">{data.profile.tone} Mode</p>
+            <p className="text-[10px] text-fg-muted italic">Keeping it real with {data.profile.tone} vibes.</p>
+          </div>
+        </Card>
+      </div>
+
+      <div className="pt-6 text-center">
+        <p className="text-[10px] text-fg-muted font-bold uppercase tracking-[0.2em] mb-4">Quick Stats</p>
+        <div className="flex justify-center gap-12 sm:gap-20">
+          <div className="text-center">
+            <p className="text-3xl font-bold tabular-nums">{(data.tasks || []).filter((t:any) => t.completed).length}</p>
+            <p className="text-[10px] text-fg-muted font-bold uppercase tracking-widest">Tasks Done</p>
+          </div>
+          <div className="text-center">
+            <p className="text-3xl font-bold tabular-nums">{(data.sections || []).filter((s:any) => s.status === 'Done').length}</p>
+            <p className="text-[10px] text-fg-muted font-bold uppercase tracking-widest">Checked Lists</p>
+          </div>
+        </div>
       </div>
     </div>
   );
