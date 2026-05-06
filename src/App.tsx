@@ -277,12 +277,16 @@ export default function App() {
         >
           <div className="flex justify-center mb-8">
             <div className="w-16 h-16 bg-accent-primary/10 rounded-3xl flex items-center justify-center text-accent-primary">
-              <BookOpen size={32} />
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 4c-4.418 0-8 3.582-8 8s3.582 8 8 8 8-3.582 8-8" />
+                <path d="M20 12c0-4.418-3.582-8-8-8" opacity="0.3" />
+                <circle cx="12" cy="12" r="2.5" fill="currentColor" />
+              </svg>
             </div>
           </div>
           
           <div className="text-center mb-10">
-            <h1 className="text-3xl font-bold tracking-tight mb-2">Welcome to Loooop</h1>
+            <h1 className="text-3xl font-bold tracking-tight mb-2">Welcome to loooop</h1>
             <p className="text-fg-muted">Your minimal companion for staying on top of things.</p>
           </div>
           
@@ -396,9 +400,13 @@ export default function App() {
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-accent-primary text-white rounded-2xl flex items-center justify-center">
-              <BookOpen size={20} />
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 4c-4.418 0-8 3.582-8 8s3.582 8 8 8 8-3.582 8-8" />
+                <path d="M20 12c0-4.418-3.582-8-8-8" opacity="0.5" />
+                <circle cx="12" cy="12" r="2" fill="currentColor" />
+              </svg>
             </div>
-            <h1 className="text-xl font-bold tracking-tight">Loooop</h1>
+            <h1 className="text-xl font-bold tracking-tight">loooop</h1>
           </div>
           
           <div className="flex items-center gap-3">
