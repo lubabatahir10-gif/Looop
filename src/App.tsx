@@ -1,16 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { NotificationService, NOTIFICATION_TONES } from './lib/notifications';
 import { 
   CheckSquare, 
   BookOpen, 
-  Bell, 
   Settings as SettingsIcon, 
   Plus, 
   Trash2, 
   Check,
   CheckCircle2, 
-  Clock, 
   AlertCircle,
   MoreVertical,
   ChevronRight,
@@ -21,14 +18,12 @@ import {
   ClipboardCheck,
   MessageSquare,
   BookCheck,
-  Volume2,
-  BellRing,
   Camera,
   Edit2,
   X
 } from 'lucide-react';
-import { Task, ClassSection, UserProfile, Status, AppData, Tone, Intensity, Student, TrackerCategory, ThemeMode, ColorTheme } from './types';
-import { SALUTATIONS, TONES, INTENSITIES, NAG_MESSAGES, TASK_TEMPLATES, THEME_MODES, COLOR_THEMES, MOTIVATING_DESCRIPTIONS } from './constants';
+import { Task, ClassSection, UserProfile, Status, AppData, Student, TrackerCategory, ThemeMode, ColorTheme } from './types';
+import { SALUTATIONS, TASK_TEMPLATES, THEME_MODES, COLOR_THEMES, MOTIVATING_DESCRIPTIONS } from './constants';
 
 const STORAGE_KEY = 'loooop_data_v1';
 
@@ -36,13 +31,8 @@ const INITIAL_DATA: AppData = {
   profile: {
     name: '',
     salutation: 'Miss',
-    tone: 'Professional',
-    nagIntensity: 'Medium',
     themeMode: 'system',
     colorTheme: 'Classic',
-    notificationsEnabled: false,
-    notificationTone: 'chime',
-    reminderFrequency: 5,
     profilePicture: undefined
   },
   tasks: [],
@@ -88,13 +78,6 @@ export default function App() {
       if (!parsed.profile.themeMode) {
         parsed.profile.themeMode = 'system';
         parsed.profile.colorTheme = 'Classic';
-      }
-      // Migrate old sound IDs
-      if (parsed.profile.notificationTone === 'sparkle' || parsed.profile.notificationTone === 'dreamy') {
-        parsed.profile.notificationTone = 'drop';
-      }
-      if (parsed.profile.notificationTone === 'minimal') {
-        parsed.profile.notificationTone = 'sweet';
       }
     }
     if (parsed.sections) {
@@ -145,9 +128,8 @@ export default function App() {
     return parsed;
   });
 
-  const [activeTab, setActiveTab] = useState<'tasks' | 'notebooks' | 'reminders' | 'settings' | 'profile'>('tasks');
+  const [activeTab, setActiveTab] = useState<'tasks' | 'notebooks' | 'settings' | 'profile'>('tasks');
   const [isSetup, setIsSetup] = useState(!data.profile.name);
-  const [activeNag, setActiveNag] = useState<string | null>(null);
   const [motivatingQuote, setMotivatingQuote] = useState('');
 
   // Randomize motivating quote when entering profile
@@ -178,75 +160,15 @@ export default function App() {
     }
   }, [data.profile.themeMode, data.profile.colorTheme]);
 
-  // Migration and persistence logic
-  useEffect(() => {
-    // Service Worker Registration
-    NotificationService.init();
-
-    // Listen for notification actions from SW
-    const handleMessage = (event: MessageEvent) => {
-      if (event.data && event.data.type === 'NOTIFICATION_ACTION') {
-        const { action, taskId } = event.data;
-        if (action === 'done' && taskId) {
-          toggleTask(taskId);
-        }
-        // 'onit' and 'later' just bring the user back, handled by SW focus()
-      }
-    };
-
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.addEventListener('message', handleMessage);
-      return () => navigator.serviceWorker.removeEventListener('message', handleMessage);
-    }
-  }, []);
-
   // Persistence logic
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   }, [data]);
 
-  // Nag System
-  useEffect(() => {
-    if (isSetup) return;
-
-    const getInterval = () => {
-      return (data.profile.reminderFrequency || 5) * 60000;
-    };
-
-    const interval = setInterval(() => {
-      const messages = NAG_MESSAGES[data.profile.tone];
-      const pendingTasks = (data.tasks || []).filter(t => !t.completed).length;
-      const pendingSections = (data.sections || []).filter(s => s.status !== 'Done').length;
-
-      let pool: string[] = [...messages.general];
-      if (pendingTasks > 0) pool = [...pool, ...messages.tasks];
-      if (pendingSections > 0) pool = [...pool, ...messages.notebooks];
-
-      const randomMsg = pool[Math.floor(Math.random() * pool.length)];
-      const salutation = data.profile.salutation === 'Custom' ? '' : data.profile.salutation;
-      const finalMsg = randomMsg.replace('{name}', `${salutation} ${data.profile.name}`.trim());
-      
-      // Trigger notification if enabled
-      if (data.profile.notificationsEnabled) {
-        NotificationService.show('loooop Nudge', finalMsg, undefined, data.profile.notificationTone).then(result => {
-           if (result && result.type === 'in-app') {
-             setActiveNag(finalMsg);
-           }
-        });
-      } else {
-        setActiveNag(finalMsg);
-      }
-    }, getInterval());
-
-    return () => clearInterval(interval);
-  }, [isSetup, data.profile, data.tasks, data.sections]);
-
-  const addTask = (title: string, type: 'fixed' | 'random', time?: string) => {
+  const addTask = (title: string) => {
     const newTask: Task = {
       id: Math.random().toString(36).substr(2, 9),
       title,
-      reminderType: type,
-      fixedTime: time,
       completed: false,
       createdAt: Date.now()
     };
@@ -315,6 +237,17 @@ export default function App() {
     }));
   };
 
+  const deleteCategoryFromSection = (sectionId: string, categoryId: string) => {
+    setData(prev => ({
+      ...prev,
+      sections: (prev.sections || []).map(s => s.id === sectionId ? {
+        ...s,
+        categories: s.categories.filter(c => c.id !== categoryId),
+        updatedAt: Date.now()
+      } : s)
+    }));
+  };
+
   const updateSectionStatus = (id: string, status: Status) => {
     setData(prev => ({
       ...prev,
@@ -374,26 +307,6 @@ export default function App() {
                   />
                 </div>
               </div>
-
-              <div>
-                <label className="block text-xs font-bold text-fg-muted uppercase tracking-widest mb-2 px-1">Tone & Intensity</label>
-                <div className="grid grid-cols-2 gap-3">
-                  <select 
-                    value={data.profile.tone || 'Professional'}
-                    onChange={e => setData(prev => ({ ...prev, profile: { ...prev.profile, tone: e.target.value as Tone } }))}
-                    className="bg-bg-base border border-border-subtle rounded-2xl px-4 py-3 text-sm focus:ring-2 focus:ring-accent-primary outline-none"
-                  >
-                    {TONES.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                  <select 
-                    value={data.profile.nagIntensity || 'Medium'}
-                    onChange={e => setData(prev => ({ ...prev, profile: { ...prev.profile, nagIntensity: e.target.value as Intensity } }))}
-                    className="bg-bg-base border border-border-subtle rounded-2xl px-4 py-3 text-sm focus:ring-2 focus:ring-accent-primary outline-none"
-                  >
-                    {INTENSITIES.map(i => <option key={i} value={i}>{i}</option>)}
-                  </select>
-                </div>
-              </div>
             </div>
 
             <Button type="submit" className="w-full py-4 text-base tracking-tight rounded-3xl mt-4">
@@ -405,55 +318,8 @@ export default function App() {
     );
   }
 
-  const pendingSectionsCount = (data.sections || []).filter(s => s.status !== 'Done').length;
-
   return (
     <div className="min-h-screen bg-bg-base pb-32 transition-colors duration-500">
-      {/* Nag Notification */}
-      <AnimatePresence>
-        {activeNag && (
-          <motion.div 
-            initial={{ opacity: 0, y: -20, x: '-50%' }}
-            animate={{ opacity: 1, y: 20, x: '-50%' }}
-            exit={{ opacity: 0, y: -20, x: '-50%' }}
-            className="fixed top-0 left-1/2 z-50 w-[calc(100%-2rem)] max-w-sm"
-          >
-            <div className="bg-bg-surface border border-border-subtle text-fg-base p-6 rounded-3xl shadow-xl flex flex-col gap-4">
-              <div className="flex items-center gap-4">
-                <div className="bg-accent-primary/10 p-3 rounded-2xl text-accent-primary">
-                  <Bell size={20} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-fg-muted mb-1">Quick check</p>
-                  <p className="font-medium text-sm leading-snug">{activeNag}</p>
-                </div>
-              </div>
-              
-              <div className="flex gap-2">
-                <button 
-                  onClick={() => setActiveNag(null)}
-                  className="flex-1 px-4 py-2 bg-accent-primary text-white text-xs font-bold rounded-xl hover:opacity-90 transition-all"
-                >
-                  Done
-                </button>
-                <button 
-                  onClick={() => setActiveNag(null)}
-                  className="flex-1 px-4 py-2 bg-bg-base border border-border-subtle text-fg-base text-xs font-bold rounded-xl hover:bg-bg-surface transition-all"
-                >
-                  On it
-                </button>
-                <button 
-                  onClick={() => setActiveNag(null)}
-                  className="flex-1 px-4 py-2 bg-transparent text-fg-muted text-xs font-bold rounded-xl hover:text-fg-base transition-all"
-                >
-                  Later
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
       {/* Header */}
       <header className="bg-bg-surface/80 backdrop-blur-md border-b border-border-subtle px-6 py-4 sticky top-0 z-40">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
@@ -488,38 +354,6 @@ export default function App() {
       </header>
 
       <main className="max-w-4xl mx-auto p-6 space-y-8">
-        {/* Statistics Bar */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card className="flex items-center gap-4 py-4 px-6">
-            <div className="p-3 bg-accent-primary/10 rounded-2xl text-accent-primary">
-              <Clock size={20} />
-            </div>
-            <div>
-              <p className="text-[10px] font-bold text-fg-muted uppercase tracking-widest leading-none mb-1">Still pending 👀</p>
-              <p className="text-xl font-bold">{pendingSectionsCount} Sections</p>
-              <p className="text-[8px] font-medium text-fg-muted italic mt-1">You said you would...</p>
-            </div>
-          </Card>
-          <Card className="flex items-center gap-4 py-4 px-6">
-            <div className="p-3 bg-accent-primary/10 rounded-2xl text-accent-primary">
-              <CheckSquare size={20} />
-            </div>
-            <div>
-              <p className="text-[10px] font-bold text-fg-muted uppercase tracking-widest leading-none mb-1">Tasks</p>
-              <p className="text-xl font-bold">{(data.tasks || []).filter(t => !t.completed).length} to-do</p>
-            </div>
-          </Card>
-          <Card className="flex items-center gap-4 py-4 px-6">
-            <div className="p-3 bg-green-500/10 rounded-2xl text-green-500">
-              <CheckCircle2 size={20} />
-            </div>
-            <div>
-              <p className="text-[10px] font-bold text-fg-muted uppercase tracking-widest leading-none mb-1">Finished</p>
-              <p className="text-xl font-bold">{(data.sections || []).filter(s => s.status === 'Done').length} Checked</p>
-            </div>
-          </Card>
-        </div>
-
         {/* Tab Content */}
         <motion.div
            key={activeTab}
@@ -536,15 +370,14 @@ export default function App() {
               onAdd={addSection} 
               onUpdateStudents={updateSectionStudents}
               onAddCategory={addCategoryToSection}
+              onDeleteCategory={deleteCategoryFromSection}
               onUpdateCategory={updateCategoryCompletion}
             />
           )}
-          {activeTab === 'reminders' && <RemindersSummary data={data} />}
           {activeTab === 'settings' && (
             <SettingsView 
               data={data} 
               onUpdateProfile={(p) => setData(prev => ({ ...prev, profile: p }))} 
-              onNotify={setActiveNag}
             />
           )}
           {activeTab === 'profile' && (
@@ -561,7 +394,6 @@ export default function App() {
       <nav className="fixed bottom-8 left-1/2 -translate-x-1/2 w-fit glass rounded-[2rem] p-1.5 flex gap-1 z-50">
         <NavButton active={activeTab === 'tasks'} onClick={() => setActiveTab('tasks')} icon={<CheckSquare size={18} />} label="Tasks" />
         <NavButton active={activeTab === 'notebooks'} onClick={() => setActiveTab('notebooks')} icon={<BookOpen size={18} />} label="Notebooks" />
-        <NavButton active={activeTab === 'reminders'} onClick={() => setActiveTab('reminders')} icon={<Bell size={18} />} label="Focus" />
         <NavButton active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} icon={<SettingsIcon size={18} />} label="Settings" />
       </nav>
     </div>
@@ -585,13 +417,11 @@ function NavButton({ active, onClick, icon, label }: any) {
 function TasksView({ data, onToggle, onDelete, onAdd }: any) {
   const [showAdd, setShowAdd] = useState(false);
   const [newTitle, setNewTitle] = useState('');
-  const [remType, setRemType] = useState<'fixed' | 'random'>('random');
-  const [time, setTime] = useState('08:00');
 
   const handleSubmit = (e: any) => {
     e.preventDefault();
     if (!newTitle.trim()) return;
-    onAdd(newTitle, remType, remType === 'fixed' ? time : undefined);
+    onAdd(newTitle);
     setNewTitle('');
     setShowAdd(false);
   };
@@ -601,7 +431,7 @@ function TasksView({ data, onToggle, onDelete, onAdd }: any) {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h3 className="text-xl font-bold tracking-tight px-1">Daily Flow</h3>
+        <h3 className="text-xl font-bold tracking-tight px-1 lowercase italic">you said you would</h3>
         <Button onClick={() => setShowAdd(!showAdd)} variant="primary" className="h-10 px-4 rounded-xl">
           <Plus size={18} />
           <span className="text-sm">+ What now?</span>
@@ -625,40 +455,6 @@ function TasksView({ data, onToggle, onDelete, onAdd }: any) {
               onChange={e => setNewTitle(e.target.value)}
               className="w-full text-lg font-medium bg-transparent border-b-2 border-border-subtle py-2 focus:border-accent-primary outline-none text-fg-base placeholder:text-fg-muted transition-colors"
             />
-            
-            <div className="flex flex-col sm:flex-row gap-6">
-              <div className="flex-1">
-                <label className="block text-[10px] font-bold text-fg-muted uppercase tracking-widest mb-3">Reminder Style</label>
-                <div className="flex p-1 bg-bg-base rounded-2xl border border-border-subtle max-w-fit">
-                  <button 
-                    type="button"
-                    onClick={() => setRemType('random')}
-                    className={`px-5 py-2 text-xs font-bold rounded-xl transition-all ${remType === 'random' ? 'bg-bg-surface text-fg-base shadow-sm border border-border-subtle' : 'text-fg-muted'}`}
-                  >
-                    Nudge
-                  </button>
-                  <button 
-                    type="button"
-                    onClick={() => setRemType('fixed')}
-                    className={`px-5 py-2 text-xs font-bold rounded-xl transition-all ${remType === 'fixed' ? 'bg-bg-surface text-fg-base shadow-sm border border-border-subtle' : 'text-fg-muted'}`}
-                  >
-                    Fixed Time
-                  </button>
-                </div>
-              </div>
-
-              {remType === 'fixed' && (
-                <div className="w-full sm:w-auto">
-                  <label className="block text-[10px] font-bold text-fg-muted uppercase tracking-widest mb-3">Select Time</label>
-                  <input 
-                    type="time" 
-                    value={time || '08:00'}
-                    onChange={e => setTime(e.target.value)}
-                    className="bg-bg-base border border-border-subtle px-4 py-2.5 rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-accent-primary w-full"
-                  />
-                </div>
-              )}
-            </div>
             
             <div className="space-y-3">
               <p className="text-[10px] font-bold uppercase tracking-widest text-fg-muted ml-1">Quick Add</p>
@@ -693,34 +489,42 @@ function TasksView({ data, onToggle, onDelete, onAdd }: any) {
           </div>
         )}
         {tasks.map((task: Task) => (
-          <motion.div 
+          <motion.div
             layout
-            key={task.id} 
-            className={`group flex items-center gap-4 bg-bg-surface p-5 rounded-3xl border border-border-subtle transition-all duration-300 ${task.completed ? 'opacity-50' : 'hover:border-accent-primary/30 shadow-sm'}`}
+            key={task.id}
+            drag="x"
+            dragConstraints={{ left: -100, right: 100 }}
+            dragElastic={0.2}
+            onDragEnd={(_, info) => {
+              if (Math.abs(info.offset.x) > 60) {
+                onToggle(task.id);
+              }
+            }}
+            className="relative"
           >
-            <button 
-              onClick={() => onToggle(task.id)}
-              className={`w-10 h-10 rounded-2xl border-2 flex items-center justify-center transition-all ${task.completed ? 'bg-accent-primary border-accent-primary text-white scale-95' : 'border-border-subtle hover:border-accent-primary/30'}`}
-            >
-              {task.completed ? <CheckCircle2 size={24} /> : <div className="w-1.5 h-1.5 rounded-full bg-border-subtle group-hover:bg-accent-primary/50" />}
-            </button>
-            <div className="flex-1 min-w-0">
-              <h4 className={`text-base font-semibold text-fg-base truncate transition-all ${task.completed ? 'line-through text-fg-muted' : ''}`}>
-                {task.title}
-              </h4>
-              <div className="flex items-center gap-3 mt-1">
-                <span className="text-[10px] font-bold tracking-widest uppercase py-1 px-2.5 bg-bg-base border border-border-subtle rounded-lg text-fg-muted flex items-center gap-1.5 leading-none">
-                  <Clock size={12} />
-                  {task.reminderType === 'random' ? 'Calm Nudge' : task.fixedTime}
-                </span>
-              </div>
+            <div className={`absolute inset-0 rounded-3xl flex items-center justify-between px-8 text-white transition-colors ${task.completed ? 'bg-fg-muted' : 'bg-accent-primary'}`}>
+              <CheckCircle2 size={24} />
+              <CheckCircle2 size={24} />
             </div>
-            <button 
-              onClick={() => onDelete(task.id)}
-              className="text-fg-muted hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all p-2 rounded-xl hover:bg-red-500/10"
-            >
-              <Trash2 size={18} />
-            </button>
+            <div className={`relative group flex items-center gap-4 bg-bg-surface p-5 rounded-3xl border border-border-subtle transition-all duration-300 ${task.completed ? 'opacity-50' : 'hover:border-accent-primary/30 shadow-sm'}`}>
+              <button 
+                onClick={() => onToggle(task.id)}
+                className={`w-10 h-10 rounded-2xl border-2 flex items-center justify-center transition-all ${task.completed ? 'bg-accent-primary border-accent-primary text-white scale-95' : 'border-border-subtle hover:border-accent-primary/30'}`}
+              >
+                {task.completed ? <CheckCircle2 size={24} /> : <div className="w-1.5 h-1.5 rounded-full bg-border-subtle group-hover:bg-accent-primary/50" />}
+              </button>
+              <div className="flex-1 min-w-0" onClick={() => onToggle(task.id)}>
+                <h4 className={`text-base font-semibold text-fg-base truncate transition-all ${task.completed ? 'line-through text-fg-muted' : ''}`}>
+                  {task.title}
+                </h4>
+              </div>
+              <button 
+                onClick={(e) => { e.stopPropagation(); onDelete(task.id); }}
+                className="text-fg-muted hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all p-2 rounded-xl hover:bg-red-500/10"
+              >
+                <Trash2 size={18} />
+              </button>
+            </div>
           </motion.div>
         ))}
       </div>
@@ -728,7 +532,7 @@ function TasksView({ data, onToggle, onDelete, onAdd }: any) {
   );
 }
 
-function NotebookView({ data, onUpdate, onDelete, onAdd, onUpdateStudents, onAddCategory, onUpdateCategory }: any) {
+function NotebookView({ data, onUpdate, onDelete, onAdd, onUpdateStudents, onAddCategory, onDeleteCategory, onUpdateCategory }: any) {
   const [showAdd, setShowAdd] = useState(false);
   const [name, setName] = useState('');
   const [subject, setSubject] = useState('');
@@ -736,11 +540,16 @@ function NotebookView({ data, onUpdate, onDelete, onAdd, onUpdateStudents, onAdd
 
   const pendingCount = (data.sections || []).filter((s: any) => s.status !== 'Done').length;
 
+  // Sorting and Filtering for Sections
+  const [sectionSort, setSectionSort] = useState<'updated' | 'name' | 'subject'>('updated');
+  const [sectionFilter, setSectionFilter] = useState<'all' | 'pending' | 'done'>('all');
+
   // For Details View
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
   const [individualName, setIndividualName] = useState('');
   const [batchNames, setBatchNames] = useState('');
   const [studentFilter, setStudentFilter] = useState<'all' | 'incomplete'>('all');
+  const [studentSort, setStudentSort] = useState<'az' | 'za'>('az');
   const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(null);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [showAddCategory, setShowAddCategory] = useState(false);
@@ -761,6 +570,18 @@ function NotebookView({ data, onUpdate, onDelete, onAdd, onUpdateStudents, onAdd
   };
 
   const selectedSection = data.sections.find((s: any) => s.id === selectedSectionId);
+
+  const filteredSections = (data.sections || [])
+    .filter((s: any) => {
+      if (sectionFilter === 'pending') return s.status !== 'Done';
+      if (sectionFilter === 'done') return s.status === 'Done';
+      return true;
+    })
+    .sort((a: any, b: any) => {
+      if (sectionSort === 'name') return a.name.localeCompare(b.name);
+      if (sectionSort === 'subject') return a.subject.localeCompare(b.subject);
+      return b.updatedAt - a.updatedAt;
+    });
 
   const handleIndividualAdd = (e: React.FormEvent) => {
     e.preventDefault();
@@ -810,17 +631,46 @@ function NotebookView({ data, onUpdate, onDelete, onAdd, onUpdateStudents, onAdd
             </p>
           )}
         </div>
-        {!selectedSectionId ? (
-          <Button onClick={() => setShowAdd(!showAdd)} variant="secondary" className="h-10 px-4 rounded-xl border-fg-muted/20">
-            <Plus size={18} />
-            <span className="text-sm">New Group</span>
-          </Button>
-        ) : (
+        {!selectedSectionId && (
+          <div className="flex gap-2">
+            <select 
+              value={sectionFilter}
+              onChange={e => setSectionFilter(e.target.value as any)}
+              className="bg-bg-surface border border-border-subtle rounded-xl px-3 py-2 text-xs font-bold outline-none focus:border-accent-primary/50"
+            >
+              <option value="all">All Status</option>
+              <option value="pending">Pending</option>
+              <option value="done">Done</option>
+            </select>
+            <Button onClick={() => setShowAdd(!showAdd)} variant="secondary" className="h-10 px-4 rounded-xl border-fg-muted/20">
+              <Plus size={18} />
+              <span className="text-sm">New Group</span>
+            </Button>
+          </div>
+        )}
+        {selectedSectionId && (
           <Button onClick={() => setSelectedSectionId(null)} variant="secondary" className="h-10 px-4 rounded-xl">
             <span className="text-sm">Back to Classes</span>
           </Button>
         )}
       </div>
+
+      {!selectedSectionId && (
+        <div className="flex items-center gap-4 px-1">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-fg-muted">Sort By:</p>
+          <div className="flex gap-2">
+            {(['updated', 'name', 'subject'] as const).map(sort => (
+              <button
+                key={sort}
+                onClick={() => setSectionSort(sort)}
+                className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-lg transition-all ${sectionSort === sort ? 'bg-accent-primary/10 text-accent-primary' : 'text-fg-muted hover:text-fg-base'}`}
+              >
+                {sort}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <AnimatePresence>
         {!selectedSectionId && showAdd && (
@@ -863,79 +713,100 @@ function NotebookView({ data, onUpdate, onDelete, onAdd, onUpdateStudents, onAdd
       </AnimatePresence>
 
       <div className="grid gap-6 sm:grid-cols-2">
-        {!selectedSectionId && (data.sections || []).length === 0 && (
+        {!selectedSectionId && filteredSections.length === 0 && (
           <div className="col-span-2 text-center py-20 bg-bg-surface/30 rounded-[2.5rem] border border-dashed border-border-subtle">
             <BookOpen size={48} className="mx-auto mb-4 text-fg-muted opacity-20" />
             <p className="text-fg-muted font-medium">No classes yet. Your workspace is waiting. ✨</p>
           </div>
         )}
         
-        {!selectedSectionId && (data.sections || []).map((section: ClassSection) => {
+        {!selectedSectionId && filteredSections.map((section: ClassSection) => {
           const totalCompletions = section.categories.reduce((acc, cat) => acc + Object.keys(cat.completions).length, 0);
           const totalPossible = section.students.length * section.categories.length;
           const overallProgress = totalPossible > 0 ? (totalCompletions / totalPossible) * 100 : 0;
 
           return (
-            <Card key={section.id} className="group relative border border-border-subtle hover:border-fg-muted/30 hover:shadow-lg transition-all duration-300 bg-white">
-              <button 
-                onClick={(e) => { e.stopPropagation(); onDelete(section.id); }}
-                className="absolute top-4 right-4 text-fg-muted hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all p-2 rounded-xl hover:bg-red-500/10 z-10"
-              >
-                <Trash2 size={16} />
-              </button>
-              
-              <div onClick={() => setSelectedSectionId(section.id)} className="cursor-pointer p-8 space-y-6">
-                <div className="flex items-start gap-4">
-                  <div className="w-14 h-14 bg-bg-base border border-border-subtle rounded-2xl flex items-center justify-center text-fg-base">
-                    <BookOpen size={28} />
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-fg-muted">{section.subject}</p>
-                    <h4 className="text-xl font-bold tracking-tight text-fg-base">{section.name}</h4>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-bg-base/50 rounded-2xl p-4 border border-border-subtle">
-                    <p className="text-[10px] font-bold uppercase text-fg-muted tracking-widest mb-1">Students</p>
-                    <p className="text-lg font-bold">{section.students.length}</p>
-                  </div>
-                  <div className="bg-bg-base/50 rounded-2xl p-4 border border-border-subtle">
-                    <p className="text-[10px] font-bold uppercase text-fg-muted tracking-widest mb-1">Sections</p>
-                    <p className="text-lg font-bold">{section.categories.length}</p>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center">
-                    <p className="text-[10px] font-bold uppercase text-fg-muted tracking-widest">Total Progress</p>
-                    <p className="text-[10px] font-bold text-fg-base">{Math.round(overallProgress)}%</p>
-                  </div>
-                  <div className="w-full h-1.5 bg-border-subtle rounded-full overflow-hidden">
-                    <motion.div 
-                      initial={{ width: 0 }}
-                      animate={{ width: `${overallProgress}%` }}
-                      className="h-full bg-fg-muted/40"
-                    />
-                  </div>
-                </div>
-
-                <div className="pt-4 border-t border-border-subtle/50 space-y-2">
-                   {section.categories.slice(0, 3).map(cat => {
-                     const count = Object.keys(cat.completions).length;
-                     return (
-                       <div key={cat.id} className="flex justify-between items-center text-[10px] font-semibold text-fg-muted">
-                         <span>{cat.name}</span>
-                         <span className="text-fg-base">{count}/{section.students.length}</span>
-                       </div>
-                     );
-                   })}
-                   {section.categories.length > 3 && (
-                     <p className="text-[9px] text-fg-muted font-bold uppercase tracking-widest pt-1">+{section.categories.length - 3} more sections</p>
-                   )}
-                </div>
+            <motion.div 
+              key={section.id}
+              drag="x"
+              dragConstraints={{ left: -120, right: 120 }}
+              dragElastic={0.2}
+              onDragEnd={(_, info) => {
+                if (Math.abs(info.offset.x) > 80) {
+                  onDelete(section.id);
+                }
+              }}
+              className="relative"
+            >
+              <div className="absolute inset-0 bg-red-500 rounded-[2rem] flex items-center justify-between px-8 text-white">
+                <Trash2 size={24} />
+                <Trash2 size={24} />
               </div>
-            </Card>
+              <Card className="group relative border border-border-subtle hover:border-fg-muted/30 hover:shadow-lg transition-all duration-300 bg-white">
+                <button 
+                  onClick={(e) => { 
+                    e.stopPropagation(); 
+                    onDelete(section.id); 
+                  }}
+                  className="absolute top-4 right-4 text-fg-muted hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all p-2 rounded-xl hover:bg-red-500/10 z-20"
+                >
+                  <Trash2 size={16} />
+                </button>
+                
+                <div onClick={() => setSelectedSectionId(section.id)} className="cursor-pointer p-8 space-y-6">
+                  {/* ... contents ... */}
+                  <div className="flex items-start gap-4">
+                    <div className="w-14 h-14 bg-bg-base border border-border-subtle rounded-2xl flex items-center justify-center text-fg-base">
+                      <BookOpen size={28} />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-fg-muted">{section.subject}</p>
+                      <h4 className="text-xl font-bold tracking-tight text-fg-base">{section.name}</h4>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-bg-base/50 rounded-2xl p-4 border border-border-subtle">
+                      <p className="text-[10px] font-bold uppercase text-fg-muted tracking-widest mb-1">Students</p>
+                      <p className="text-lg font-bold">{section.students.length}</p>
+                    </div>
+                    <div className="bg-bg-base/50 rounded-2xl p-4 border border-border-subtle">
+                      <p className="text-[10px] font-bold uppercase text-fg-muted tracking-widest mb-1">Sections</p>
+                      <p className="text-lg font-bold">{section.categories.length}</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center">
+                      <p className="text-[10px] font-bold uppercase text-fg-muted tracking-widest">Total Progress</p>
+                      <p className="text-[10px] font-bold text-fg-base">{Math.round(overallProgress)}%</p>
+                    </div>
+                    <div className="w-full h-1.5 bg-border-subtle rounded-full overflow-hidden">
+                      <motion.div 
+                        initial={{ width: 0 }}
+                        animate={{ width: `${overallProgress}%` }}
+                        className="h-full bg-fg-muted/40"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="pt-4 border-t border-border-subtle/50 space-y-2">
+                     {section.categories.slice(0, 3).map(cat => {
+                       const count = Object.keys(cat.completions).length;
+                       return (
+                         <div key={cat.id} className="flex justify-between items-center text-[10px] font-semibold text-fg-muted">
+                           <span>{cat.name}</span>
+                           <span className="text-fg-base">{count}/{section.students.length}</span>
+                         </div>
+                       );
+                     })}
+                     {section.categories.length > 3 && (
+                       <p className="text-[9px] text-fg-muted font-bold uppercase tracking-widest pt-1">+{section.categories.length - 3} more sections</p>
+                     )}
+                  </div>
+                </div>
+              </Card>
+            </motion.div>
           );
         })}
 
@@ -954,19 +825,35 @@ function NotebookView({ data, onUpdate, onDelete, onAdd, onUpdateStudents, onAdd
                     </div>
                   </div>
 
-                  <div className="flex bg-[#0F1115] p-1.5 rounded-2xl border border-white/5">
-                     <button 
-                       onClick={() => setStudentFilter('all')}
-                       className={`px-6 py-2 text-xs font-bold rounded-xl transition-all ${studentFilter === 'all' ? 'bg-[#4F8CFF] shadow-lg shadow-[#4F8CFF]/20 text-white' : 'text-[#9AA3B2] hover:text-[#E6EAF2]'}`}
-                     >
-                       Full Class
-                     </button>
-                     <button 
-                       onClick={() => setStudentFilter('incomplete')}
-                       className={`px-6 py-2 text-xs font-bold rounded-xl transition-all ${studentFilter === 'incomplete' ? 'bg-[#4F8CFF] shadow-lg shadow-[#4F8CFF]/20 text-white' : 'text-[#9AA3B2] hover:text-[#E6EAF2]'}`}
-                     >
-                       Needs Work
-                     </button>
+                  <div className="flex flex-col gap-4">
+                    <div className="flex bg-[#0F1115] p-1.5 rounded-2xl border border-white/5">
+                      <button 
+                        onClick={() => setStudentFilter('all')}
+                        className={`px-6 py-2 text-xs font-bold rounded-xl transition-all ${studentFilter === 'all' ? 'bg-[#4F8CFF] shadow-lg shadow-[#4F8CFF]/20 text-white' : 'text-[#9AA3B2] hover:text-[#E6EAF2]'}`}
+                      >
+                        Full Class
+                      </button>
+                      <button 
+                        onClick={() => setStudentFilter('incomplete')}
+                        className={`px-6 py-2 text-xs font-bold rounded-xl transition-all ${studentFilter === 'incomplete' ? 'bg-[#4F8CFF] shadow-lg shadow-[#4F8CFF]/20 text-white' : 'text-[#9AA3B2] hover:text-[#E6EAF2]'}`}
+                      >
+                        Needs Work
+                      </button>
+                    </div>
+                    <div className="flex bg-[#0F1115] p-1.5 rounded-2xl border border-white/5">
+                      <button 
+                        onClick={() => setStudentSort('az')}
+                        className={`flex-1 px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${studentSort === 'az' ? 'bg-white/10 text-white' : 'text-[#9AA3B2]'}`}
+                      >
+                        A-Z
+                      </button>
+                      <button 
+                        onClick={() => setStudentSort('za')}
+                        className={`flex-1 px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${studentSort === 'za' ? 'bg-white/10 text-white' : 'text-[#9AA3B2]'}`}
+                      >
+                        Z-A
+                      </button>
+                    </div>
                   </div>
                </div>
 
@@ -975,8 +862,17 @@ function NotebookView({ data, onUpdate, onDelete, onAdd, onUpdateStudents, onAdd
                   <div className="flex flex-wrap gap-2">
                      <p className="text-[10px] font-bold uppercase tracking-widest text-[#9AA3B2] mr-2 flex items-center">Trackers:</p>
                      {selectedSection.categories.map(cat => (
-                        <div key={cat.id} className="px-4 py-1.5 bg-[#2A2F3A] border border-white/5 rounded-full text-[10px] font-bold text-[#E6EAF2] hover:border-[#4F8CFF]/30 transition-colors">
-                          {cat.name}
+                        <div key={cat.id} className="flex items-center gap-2 px-4 py-2 bg-[#2A2F3A] border border-white/10 rounded-full text-[11px] font-bold text-[#E6EAF2] hover:border-[#4F8CFF]/50 transition-all group/badge">
+                          <span>{cat.name}</span>
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDeleteCategory(selectedSection.id, cat.id);
+                            }}
+                            className="text-[#9AA3B2] hover:text-red-400 p-1 rounded-full hover:bg-red-500/20 transition-all ml-1"
+                          >
+                            <X size={14} />
+                          </button>
                         </div>
                      ))}
                   </div>
@@ -1024,9 +920,11 @@ function NotebookView({ data, onUpdate, onDelete, onAdd, onUpdateStudents, onAdd
                     students={selectedSection.students}
                     sectionId={selectedSection.id}
                     onUpdateCategory={onUpdateCategory}
+                    onDeleteCategory={(catId: string) => onDeleteCategory(selectedSection.id, catId)}
                     isExpanded={expandedCategoryId === category.id}
                     onToggle={() => setExpandedCategoryId(expandedCategoryId === category.id ? null : category.id)}
                     filter={studentFilter}
+                    sort={studentSort}
                  />
                ))}
             </div>
@@ -1101,38 +999,56 @@ function NotebookView({ data, onUpdate, onDelete, onAdd, onUpdateStudents, onAdd
   );
 }
 
-function TrackerCategorySection({ category, students, sectionId, onUpdateCategory, isExpanded, onToggle, filter }: any) {
-  const completedCount = Object.keys(category.completions).length;
+function TrackerCategorySection({ category, students, sectionId, onUpdateCategory, onDeleteCategory, isExpanded, onToggle, filter, sort }: any) {
+  const [draftCompletions, setDraftCompletions] = useState<Record<string, boolean>>(category.completions);
+  const [hasChanges, setHasChanges] = useState(false);
+
+  useEffect(() => {
+    setDraftCompletions(category.completions);
+    setHasChanges(false);
+  }, [category.completions, isExpanded]);
+
+  const completedCount = Object.keys(draftCompletions).length;
   const progressPercent = students.length > 0 ? (completedCount / students.length) * 100 : 0;
 
   const handleToggleStudent = (studentId: string) => {
-    const newCompletions = { ...category.completions };
-    if (newCompletions[studentId]) {
-      delete newCompletions[studentId];
+    const newDraft = { ...draftCompletions };
+    if (newDraft[studentId]) {
+      delete newDraft[studentId];
     } else {
-      newCompletions[studentId] = true;
+      newDraft[studentId] = true;
     }
-    onUpdateCategory(sectionId, category.id, newCompletions);
+    setDraftCompletions(newDraft);
+    setHasChanges(true);
   };
 
-  const setAll = (val: boolean) => {
-    const newCompletions: Record<string, boolean> = {};
+  const handleSetAllDraft = (val: boolean) => {
+    const newDraft: Record<string, boolean> = {};
     if (val) {
-      students.forEach((s: any) => newCompletions[s.id] = true);
+      students.forEach((s: any) => newDraft[s.id] = true);
     }
-    onUpdateCategory(sectionId, category.id, newCompletions);
+    setDraftCompletions(newDraft);
+    setHasChanges(true);
+  };
+
+  const handleApplyChanges = () => {
+    onUpdateCategory(sectionId, category.id, draftCompletions);
+    setHasChanges(false);
   };
 
   const filteredList = students.filter((s: any) => {
-    if (filter === 'incomplete') return !category.completions[s.id];
+    if (filter === 'incomplete') return !draftCompletions[s.id];
     return true;
+  }).sort((a: any, b: any) => {
+    if (sort === 'za') return b.name.localeCompare(a.name);
+    return a.name.localeCompare(b.name);
   });
 
   return (
     <div className="bg-[#1A1D24] border border-white/5 rounded-[2rem] overflow-hidden shadow-xl transition-all duration-300">
        <div 
+         className="p-6 cursor-pointer hover:bg-white/5 flex items-center justify-between transition-colors group"
          onClick={onToggle}
-         className="p-6 cursor-pointer hover:bg-white/5 flex items-center justify-between transition-colors"
        >
           <div className="flex items-center gap-4">
              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${isExpanded ? 'bg-[#4F8CFF] text-white shadow-lg shadow-[#4F8CFF]/20' : 'bg-[#2A2F3A] text-[#9AA3B2]'}`}>
@@ -1148,8 +1064,20 @@ function TrackerCategorySection({ category, students, sectionId, onUpdateCategor
                 </div>
              </div>
           </div>
-          <div className={`transform transition-transform duration-300 ${isExpanded ? 'rotate-90' : ''}`}>
-             <ChevronRight size={20} className="text-[#9AA3B2]" />
+          <div className="flex items-center gap-3">
+             <button 
+               onClick={(e) => {
+                 e.stopPropagation();
+                 onDeleteCategory(category.id);
+               }}
+               className="w-10 h-10 flex items-center justify-center text-[#9AA3B2] hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-all"
+               title="Delete Tracker"
+             >
+                <Trash2 size={18} />
+             </button>
+             <div className={`transform transition-transform duration-300 ${isExpanded ? 'rotate-90' : ''}`}>
+                <ChevronRight size={20} className="text-[#9AA3B2]" />
+             </div>
           </div>
        </div>
 
@@ -1164,18 +1092,30 @@ function TrackerCategorySection({ category, students, sectionId, onUpdateCategor
                <div className="p-4 bg-[#0F1115] flex flex-wrap items-center justify-between gap-4 border-b border-white/5">
                   <div className="flex gap-2">
                      <button 
-                       onClick={() => setAll(true)}
+                       onClick={() => handleSetAllDraft(true)}
                        className="px-4 py-2 text-[10px] font-black uppercase tracking-widest bg-[#2A2F3A] text-[#E6EAF2] border border-white/5 rounded-xl hover:bg-[#4F8CFF] hover:text-white transition-all shadow-sm"
                      >
                        Mark All
                      </button>
                      <button 
-                       onClick={() => setAll(false)}
+                       onClick={() => handleSetAllDraft(false)}
                        className="px-4 py-2 text-[10px] font-black uppercase tracking-widest bg-[#2A2F3A] text-[#9AA3B2] border border-white/5 rounded-xl hover:bg-red-500/80 hover:text-white transition-all shadow-sm"
                      >
                        Clear All
                      </button>
                   </div>
+
+                  {hasChanges && (
+                    <motion.button 
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      onClick={handleApplyChanges}
+                      className="px-6 py-2 bg-green-500 text-white text-[10px] font-black uppercase tracking-widest rounded-xl shadow-lg shadow-green-500/20 hover:bg-green-600 transition-all"
+                    >
+                      Save Changes
+                    </motion.button>
+                  )}
+
                   <div className="text-[10px] font-bold text-[#9AA3B2] uppercase tracking-[0.25em] px-2 italic opacity-50">
                      Live Check: {category.name}
                   </div>
@@ -1189,7 +1129,7 @@ function TrackerCategorySection({ category, students, sectionId, onUpdateCategor
                         </div>
                      ) : (
                        filteredList.map((student: any) => {
-                         const isDone = !!category.completions[student.id];
+                         const isDone = !!draftCompletions[student.id];
                          return (
                            <button
                              key={student.id}
@@ -1221,80 +1161,7 @@ function TrackerCategorySection({ category, students, sectionId, onUpdateCategor
   );
 }
 
-function RemindersSummary({ data }: any) {
-  const pendingTasks = (data.tasks || []).filter((t: any) => !t.completed);
-  const pendingSections = (data.sections || []).filter((s: any) => s.status !== 'Done');
-
-  return (
-    <div className="space-y-8">
-      <div className="text-center py-6">
-        <h3 className="text-3xl font-bold tracking-tight mb-2">So… here’s what happened.</h3>
-        <p className="text-fg-muted">You did some. That counts.</p>
-      </div>
-
-      <div className="grid md:grid-cols-2 gap-8">
-        <div className="space-y-4">
-           <div className="flex items-center justify-between px-2">
-             <p className="text-[10px] font-bold uppercase text-fg-muted tracking-widest">Active Tasks</p>
-             <span className="text-xs font-bold text-accent-primary">{pendingTasks.length}</span>
-           </div>
-           <div className="space-y-3">
-             {pendingTasks.length === 0 ? (
-               <div className="p-8 bg-bg-surface border border-dashed border-border-subtle rounded-3xl text-center">
-                  <p className="text-xs text-fg-muted italic">All tasks caught up</p>
-               </div>
-             ) : (
-               pendingTasks.map((t: any) => (
-                 <div key={t.id} className="p-4 bg-bg-surface border border-border-subtle rounded-2xl flex items-center gap-3">
-                    <div className="w-1.5 h-1.5 rounded-full bg-accent-primary" />
-                    <span className="text-sm font-semibold truncate">{t.title}</span>
-                 </div>
-               ))
-             )}
-           </div>
-        </div>
-
-        <div className="space-y-4">
-           <div className="flex items-center justify-between px-2">
-             <p className="text-[10px] font-bold uppercase text-fg-muted tracking-widest">Notebook Pile</p>
-             <span className="text-xs font-bold text-accent-primary">{pendingSections.length}</span>
-           </div>
-           <div className="space-y-3">
-             {pendingSections.length === 0 ? (
-               <div className="p-8 bg-bg-surface border border-dashed border-border-subtle rounded-3xl text-center">
-                  <p className="text-xs text-fg-muted italic">Desk is finally clear. 😭</p>
-               </div>
-             ) : (
-               pendingSections.map((s: any) => (
-                 <div key={s.id} className="p-4 bg-bg-surface border border-border-subtle rounded-2xl flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                      <span className="text-sm font-semibold truncate">{s.name}</span>
-                    </div>
-                    <span className="text-[10px] font-bold uppercase tracking-tighter text-fg-muted">{s.status === 'Not checked' ? 'Idle' : 'Busy'}</span>
-                 </div>
-               ))
-             )}
-           </div>
-        </div>
-      </div>
-      
-      <div className="bg-accent-primary/5 border border-accent-primary/10 rounded-[2.5rem] p-10 text-center">
-         <div className="max-w-sm mx-auto space-y-4">
-            <div className="w-12 h-12 bg-accent-primary/10 text-accent-primary rounded-2xl flex items-center justify-center mx-auto">
-               <Bell size={24} />
-            </div>
-            <h4 className="text-xl font-bold">Smart Reminders</h4>
-            <p className="text-sm text-fg-muted leading-relaxed">
-              Based on your <strong>{data.profile.nagIntensity}</strong> intensity, I'll gently nudge you about your pending workload in a <strong>{data.profile.tone}</strong> tone.
-            </p>
-         </div>
-      </div>
-    </div>
-  );
-}
-
-function SettingsView({ data, onUpdateProfile, onNotify }: any) {
+function SettingsView({ data, onUpdateProfile }: any) {
   return (
     <div className="space-y-10">
       <div className="space-y-1">
@@ -1313,29 +1180,6 @@ function SettingsView({ data, onUpdateProfile, onNotify }: any) {
                  <div>
                     <h4 className="text-xl font-bold">{data.profile.name}</h4>
                     <p className="text-xs text-fg-muted font-bold uppercase tracking-widest">{data.profile.salutation}</p>
-                 </div>
-              </div>
-
-              <div className="grid gap-6">
-                 <div>
-                    <label className="text-[10px] font-bold uppercase tracking-widest text-fg-muted mb-2 block px-1">Engagement Style</label>
-                    <select 
-                      value={data.profile.tone || 'Professional'}
-                      onChange={e => onUpdateProfile({ ...data.profile, tone: e.target.value as Tone })}
-                      className="w-full bg-bg-base border border-border-subtle rounded-2xl px-5 py-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-accent-primary appearance-none"
-                    >
-                      {TONES.map(t => <option key={t} value={t}>{t} Mode</option>)}
-                    </select>
-                 </div>
-                 <div>
-                    <label className="text-[10px] font-bold uppercase tracking-widest text-fg-muted mb-2 block px-1">Reminder Pressure</label>
-                    <select 
-                      value={data.profile.nagIntensity || 'Medium'}
-                      onChange={e => onUpdateProfile({ ...data.profile, nagIntensity: e.target.value as Intensity })}
-                      className="w-full bg-bg-base border border-border-subtle rounded-2xl px-5 py-3 text-sm font-semibold outline-none focus:ring-2 focus:ring-accent-primary appearance-none"
-                    >
-                      {INTENSITIES.map(i => <option key={i} value={i}>{i} Intensity</option>)}
-                    </select>
                  </div>
               </div>
            </div>
@@ -1376,78 +1220,6 @@ function SettingsView({ data, onUpdateProfile, onNotify }: any) {
                   </div>
                 </div>
              </div>
-          </Card>
-
-          <Card className="p-8 space-y-8 border border-border-subtle bg-bg-surface">
-            <div className="space-y-6">
-              <div className="flex items-center justify-between border-b border-border-subtle pb-6">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-accent-primary/10 rounded-2xl flex items-center justify-center text-accent-primary">
-                    <BellRing size={24} />
-                  </div>
-                  <div>
-                    <h4 className="text-xl font-bold">Notifications</h4>
-                    <p className="text-[10px] text-fg-muted font-bold uppercase tracking-widest">Browser & In-App</p>
-                  </div>
-                </div>
-                <button
-                  onClick={async () => {
-                    const enabled = !data.profile.notificationsEnabled;
-                    if (enabled) {
-                      const status = await NotificationService.requestPermission();
-                      if (status === 'denied') {
-                        onNotify("Browser notifications are blocked. I'll use in-app popups instead! ✨");
-                      } else if (status === 'unsupported') {
-                        onNotify("Your browser doesn't support notifications, but I'll nudge you here! 🎀");
-                      }
-                    }
-                    onUpdateProfile({ ...data.profile, notificationsEnabled: enabled });
-                  }}
-                  className={`w-14 h-8 rounded-full border transition-all relative ${data.profile.notificationsEnabled ? 'bg-accent-primary border-accent-primary' : 'bg-bg-base border-border-subtle'}`}
-                >
-                  <motion.div 
-                    animate={{ x: data.profile.notificationsEnabled ? 24 : 4 }}
-                    className="w-6 h-6 bg-white rounded-full absolute top-1 shadow-sm"
-                  />
-                </button>
-              </div>
-
-              <div className="grid gap-6">
-                <div>
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-fg-muted mb-2 block px-1">Nudge Interval</label>
-                  <div className="flex items-center gap-4">
-                    <input 
-                      type="range"
-                      min="1"
-                      max="60"
-                      value={data.profile.reminderFrequency || 5}
-                      onChange={e => onUpdateProfile({ ...data.profile, reminderFrequency: parseInt(e.target.value) })}
-                      className="flex-1 accent-accent-primary"
-                    />
-                    <span className="text-sm font-bold w-16 text-center tabular-nums">{data.profile.reminderFrequency}m</span>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-fg-muted mb-2 block px-1">Notification Tone</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {NOTIFICATION_TONES.map(tone => (
-                      <button
-                        key={tone.id}
-                        onClick={() => {
-                          onUpdateProfile({ ...data.profile, notificationTone: tone.id });
-                          NotificationService.playTone(tone.id);
-                        }}
-                        className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-left transition-all ${data.profile.notificationTone === tone.id ? 'bg-accent-primary/10 border-accent-primary text-accent-primary' : 'bg-bg-base border-border-subtle text-fg-muted hover:border-accent-primary/30'}`}
-                      >
-                         <Volume2 size={14} />
-                         <span className="text-xs font-bold">{tone.name}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
           </Card>
         </div>
       </div>
@@ -1587,16 +1359,6 @@ function ProfileView({ data, quote, onUpdateProfile }: any) {
             <p className="text-[10px] font-bold text-fg-muted uppercase tracking-widest leading-none mb-1">Consistency</p>
             <p className="text-lg font-bold">Top Tier</p>
             <p className="text-[10px] text-fg-muted italic">You’re actually doing it. ✨</p>
-          </div>
-        </Card>
-        <Card className="p-6 border-border-subtle/50 flex items-center gap-5">
-          <div className="w-12 h-12 bg-purple-500/10 rounded-2xl flex items-center justify-center text-purple-500 shrink-0">
-             <MessageSquare size={24} />
-          </div>
-          <div>
-            <p className="text-[10px] font-bold text-fg-muted uppercase tracking-widest leading-none mb-1">Vibe Status</p>
-            <p className="text-lg font-bold transition-colors">{data.profile.tone} Mode</p>
-            <p className="text-[10px] text-fg-muted italic">Keeping it real with {data.profile.tone} vibes.</p>
           </div>
         </Card>
       </div>
