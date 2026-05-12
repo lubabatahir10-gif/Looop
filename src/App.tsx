@@ -20,9 +20,17 @@ import {
   BookCheck,
   Camera,
   Edit2,
-  X
+  X,
+  Frown,
+  Smile,
+  BarChart3,
+  TrendingUp,
+  Search,
+  Tag,
+  Calendar,
+  Filter
 } from 'lucide-react';
-import { Task, ClassSection, UserProfile, Status, AppData, Student, TrackerCategory, ThemeMode, ColorTheme } from './types';
+import { Task, ClassSection, UserProfile, Status, AppData, Student, TrackerCategory, ThemeMode, ColorTheme, MomentEntry } from './types';
 import { SALUTATIONS, TASK_TEMPLATES, THEME_MODES, COLOR_THEMES, MOTIVATING_DESCRIPTIONS } from './constants';
 
 const STORAGE_KEY = 'loooop_data_v1';
@@ -36,7 +44,8 @@ const INITIAL_DATA: AppData = {
     profilePicture: undefined
   },
   tasks: [],
-  sections: []
+  sections: [],
+  moments: []
 };
 
 // --- Components ---
@@ -124,11 +133,12 @@ export default function App() {
     }
     if (!parsed.tasks) parsed.tasks = [];
     if (!parsed.sections) parsed.sections = [];
+    if (!parsed.moments) parsed.moments = [];
     
     return parsed;
   });
 
-  const [activeTab, setActiveTab] = useState<'tasks' | 'notebooks' | 'settings' | 'profile'>('tasks');
+  const [activeTab, setActiveTab] = useState<'tasks' | 'notebooks' | 'moments' | 'settings' | 'profile'>('tasks');
   const [isSetup, setIsSetup] = useState(!data.profile.name);
   const [motivatingQuote, setMotivatingQuote] = useState('');
 
@@ -259,6 +269,22 @@ export default function App() {
     setData(prev => ({ ...prev, sections: (prev.sections || []).filter(s => s.id !== id) }));
   };
 
+  const addMoment = (type: 'negative' | 'positive', title: string, note: string, tags: string[]) => {
+    const newMoment: MomentEntry = {
+      id: Math.random().toString(36).substr(2, 9),
+      type,
+      title,
+      note: note.trim() || undefined,
+      tags,
+      createdAt: Date.now()
+    };
+    setData(prev => ({ ...prev, moments: [newMoment, ...(prev.moments || [])] }));
+  };
+
+  const deleteMoment = (id: string) => {
+    setData(prev => ({ ...prev, moments: (prev.moments || []).filter(m => m.id !== id) }));
+  };
+
   if (isSetup) {
     return (
       <div className="min-h-screen flex items-center justify-center p-6 bg-bg-base text-fg-base">
@@ -374,6 +400,13 @@ export default function App() {
               onUpdateCategory={updateCategoryCompletion}
             />
           )}
+          {activeTab === 'moments' && (
+            <MomentsView 
+              data={data} 
+              onAdd={addMoment} 
+              onDelete={deleteMoment} 
+            />
+          )}
           {activeTab === 'settings' && (
             <SettingsView 
               data={data} 
@@ -394,6 +427,7 @@ export default function App() {
       <nav className="fixed bottom-8 left-1/2 -translate-x-1/2 w-fit glass rounded-[2rem] p-1.5 flex gap-1 z-50">
         <NavButton active={activeTab === 'tasks'} onClick={() => setActiveTab('tasks')} icon={<CheckSquare size={18} />} label="Tasks" />
         <NavButton active={activeTab === 'notebooks'} onClick={() => setActiveTab('notebooks')} icon={<BookOpen size={18} />} label="Notebooks" />
+        <NavButton active={activeTab === 'moments'} onClick={() => setActiveTab('moments')} icon={<MessageSquare size={18} />} label="Moments" />
         <NavButton active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} icon={<SettingsIcon size={18} />} label="Settings" />
       </nav>
     </div>
@@ -1157,6 +1191,334 @@ function TrackerCategorySection({ category, students, sectionId, onUpdateCategor
             </motion.div>
           )}
        </AnimatePresence>
+    </div>
+  );
+}
+
+function MomentsView({ data, onAdd, onDelete }: any) {
+  const [activeType, setActiveType] = useState<'negative' | 'positive'>('negative');
+  const [showAdd, setShowAdd] = useState(false);
+  const [showStats, setShowStats] = useState(false);
+  const [search, setSearch] = useState('');
+  const [filterTag, setFilterTag] = useState<string | null>(null);
+
+  const [title, setTitle] = useState('');
+  const [note, setNote] = useState('');
+  const [tagsInput, setTagsInput] = useState('');
+
+  const moments = data.moments || [];
+  const filteredMoments = moments.filter((m: MomentEntry) => {
+    const matchesType = m.type === activeType;
+    const matchesSearch = m.title.toLowerCase().includes(search.toLowerCase()) || 
+                         (m.note && m.note.toLowerCase().includes(search.toLowerCase()));
+    const matchesTag = filterTag ? m.tags.includes(filterTag) : true;
+    return matchesType && matchesSearch && matchesTag;
+  });
+
+  const allTags = Array.from(new Set(moments.filter((m: any) => m.type === activeType).flatMap((m: any) => m.tags)));
+
+  const handleAdd = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim()) return;
+    const tags = tagsInput.split(',').map(t => t.trim()).filter(Boolean);
+    onAdd(activeType, title, note, tags);
+    setTitle('');
+    setNote('');
+    setTagsInput('');
+    setShowAdd(false);
+  };
+
+  // Stats Logic
+  const stats = React.useMemo(() => {
+    const now = Date.now();
+    const oneWeek = 7 * 24 * 60 * 60 * 1000;
+    const oneMonth = 30 * 24 * 60 * 60 * 1000;
+
+    const typeMoments = moments.filter((m: any) => m.type === activeType);
+    
+    // Most repeated tags
+    const tagCounts: Record<string, number> = {};
+    typeMoments.forEach((m: any) => m.tags.forEach((t: string) => tagCounts[t] = (tagCounts[t] || 0) + 1));
+    const topTags = Object.entries(tagCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+    // Most recurring thing (by title)
+    const titleCounts: Record<string, number> = {};
+    typeMoments.forEach((m: any) => titleCounts[m.title] = (titleCounts[m.title] || 0) + 1);
+    const topRecurring = Object.entries(titleCounts).sort((a, b) => b[1] - a[1]).slice(0, 1)[0];
+
+    // Trends
+    const last7Days = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(now - (6 - i) * 24 * 60 * 60 * 1000);
+      return d.toLocaleDateString('en-US', { weekday: 'short' });
+    });
+    
+    const trendData = last7Days.map((day, i) => {
+      const dayStart = new Date(now - (6 - i) * 24 * 60 * 60 * 1000);
+      dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(dayStart);
+      dayEnd.setHours(23, 59, 59, 999);
+      
+      const count = typeMoments.filter((m: any) => m.createdAt >= dayStart.getTime() && m.createdAt <= dayEnd.getTime()).length;
+      return { day, count };
+    });
+
+    return {
+      weeklyCount: typeMoments.filter((m: any) => now - m.createdAt < oneWeek).length,
+      monthlyCount: typeMoments.filter((m: any) => now - m.createdAt < oneMonth).length,
+      topTags,
+      topRecurring,
+      trendData
+    };
+  }, [moments, activeType]);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex p-1 bg-bg-surface border border-border-subtle rounded-2xl w-fit">
+          <button
+            onClick={() => setActiveType('negative')}
+            className={`px-6 py-2.5 text-xs font-black uppercase tracking-widest rounded-xl transition-all flex items-center gap-2 ${activeType === 'negative' ? 'bg-[#FF4F4F]/10 text-[#FF4F4F] shadow-sm' : 'text-fg-muted hover:text-fg-base'}`}
+          >
+            <Frown size={16} />
+            Pissed Me Off
+          </button>
+          <button
+            onClick={() => setActiveType('positive')}
+            className={`px-6 py-2.5 text-xs font-black uppercase tracking-widest rounded-xl transition-all flex items-center gap-2 ${activeType === 'positive' ? 'bg-[#4FFF4F]/10 text-green-600 shadow-sm' : 'text-fg-muted hover:text-fg-base'}`}
+          >
+            <Smile size={16} />
+            Made Me Smile
+          </button>
+        </div>
+
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowStats(!showStats)}
+            className={`h-11 px-5 rounded-xl border flex items-center gap-2 transition-all ${showStats ? 'bg-accent-primary text-white border-accent-primary' : 'bg-bg-surface border-border-subtle text-fg-muted hover:border-accent-primary/50'}`}
+          >
+            <BarChart3 size={18} />
+            <span className="text-xs font-bold uppercase tracking-widest">Stats</span>
+          </button>
+          <Button onClick={() => setShowAdd(!showAdd)} className="h-11 px-5 rounded-xl shrink-0">
+            <Plus size={18} />
+            <span className="text-sm">Log Moment</span>
+          </Button>
+        </div>
+      </div>
+
+      <AnimatePresence>
+        {showAdd && (
+          <motion.form
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            onSubmit={handleAdd}
+            className="bg-bg-surface border border-border-subtle rounded-3xl p-8 overflow-hidden space-y-6 shadow-xl"
+          >
+            <div className="space-y-6">
+              <input
+                autoFocus
+                type="text"
+                placeholder={activeType === 'negative' ? "What ticked you off?" : "What made you smile?"}
+                value={title}
+                onChange={e => setTitle(e.target.value)}
+                className="w-full text-2xl font-black bg-transparent border-b-2 border-border-subtle py-2 focus:border-accent-primary outline-none text-fg-base placeholder:text-fg-muted transition-colors"
+                required
+              />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-fg-muted px-1 block">Short Note (Optional)</label>
+                  <input
+                    type="text"
+                    placeholder="Minimal details..."
+                    value={note}
+                    onChange={e => setNote(e.target.value)}
+                    className="w-full bg-bg-base border border-border-subtle px-5 py-3 rounded-2xl outline-none focus:border-accent-primary/50 text-sm"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-fg-muted px-1 block">Tags (Comma separated)</label>
+                  <input
+                    type="text"
+                    placeholder="work, people, random..."
+                    value={tagsInput}
+                    onChange={e => setTagsInput(e.target.value)}
+                    className="w-full bg-bg-base border border-border-subtle px-5 py-3 rounded-2xl outline-none focus:border-accent-primary/50 text-sm"
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowAdd(false)}
+                className="px-6 py-3 text-xs font-bold uppercase tracking-widest text-fg-muted hover:text-fg-base transition-colors"
+              >
+                Cancel
+              </button>
+              <Button type="submit" className="px-10 rounded-2xl shadow-lg">Save Moment</Button>
+            </div>
+          </motion.form>
+        )}
+
+        {showStats && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden bg-[#1A1D24] text-white rounded-[2.5rem] p-8 border border-white/5 space-y-10"
+          >
+            <div className="flex items-center gap-3">
+              <TrendingUp size={24} className="text-[#4F8CFF]" />
+              <h4 className="text-xl font-black tracking-tight">{activeType === 'negative' ? 'Vibe Check: Annoyances' : 'Vibe Check: Joys'}</h4>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              <div className="space-y-6">
+                <div className="space-y-3">
+                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#9AA3B2]">Frequency</p>
+                  <div className="flex gap-4">
+                    <div className="flex-1 bg-[#2A2F3A] p-4 rounded-2xl border border-white/5">
+                      <p className="text-2xl font-black">{stats.weeklyCount}</p>
+                      <p className="text-[9px] font-bold uppercase tracking-widest text-[#9AA3B2]">This Week</p>
+                    </div>
+                    <div className="flex-1 bg-[#2A2F3A] p-4 rounded-2xl border border-white/5">
+                      <p className="text-2xl font-black">{stats.monthlyCount}</p>
+                      <p className="text-[9px] font-bold uppercase tracking-widest text-[#9AA3B2]">This Month</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#9AA3B2]">Mostly Recurring</p>
+                  <div className="bg-[#2A2F3A] p-5 rounded-2xl border border-white/5">
+                    {stats.topRecurring ? (
+                      <div>
+                        <p className="text-sm font-bold text-[#E6EAF2]">“{stats.topRecurring[0]}”</p>
+                        <p className="text-[10px] text-[#9AA3B2] uppercase tracking-[0.1em] mt-1 italic">Happened {stats.topRecurring[1]} times</p>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-[#9AA3B2] italic">Not enough data yet.</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#9AA3B2]">Top Categories</p>
+                <div className="space-y-2">
+                  {stats.topTags.map(([tag, count]) => (
+                    <div key={tag} className="flex items-center justify-between p-3 bg-[#0F1115] rounded-xl border border-white/5">
+                      <div className="flex items-center gap-3">
+                        <div className="w-1.5 h-1.5 rounded-full bg-[#4F8CFF]" />
+                        <span className="text-[11px] font-bold uppercase tracking-widest text-[#E6EAF2]">{tag}</span>
+                      </div>
+                      <span className="text-[10px] font-black text-[#9AA3B2]">{count}x</span>
+                    </div>
+                  ))}
+                  {stats.topTags.length === 0 && <p className="text-xs text-[#9AA3B2] italic">No tags registered.</p>}
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#9AA3B2]">Activity Trends</p>
+                <div className="h-40 flex items-end justify-between gap-1 px-2">
+                  {stats.trendData.map((d, i) => (
+                    <div key={i} className="flex flex-col items-center gap-2 flex-1">
+                      <div className="w-full bg-[#2A2F3A] rounded-t-lg relative group h-32 flex items-end">
+                        <motion.div
+                          initial={{ height: 0 }}
+                          animate={{ height: `${(d.count / Math.max(...stats.trendData.map(val => val.count) || [1])) * 100}%` }}
+                          className={`w-full rounded-t-lg transition-all ${activeType === 'negative' ? 'bg-[#FF4F4F]' : 'bg-[#4FFF4F]'}`}
+                        />
+                        <div className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-bold text-white opacity-0 group-hover:opacity-100 transition-opacity">
+                          {d.count}
+                        </div>
+                      </div>
+                      <span className="text-[8px] font-black uppercase text-[#9AA3B2] tracking-tighter">{d.day}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <div className="flex flex-col md:flex-row gap-4">
+        <div className="relative flex-1">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-fg-muted" size={18} />
+          <input
+            type="text"
+            placeholder="Search entries..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="w-full bg-bg-surface border border-border-subtle pl-12 pr-6 py-3 rounded-2xl outline-none focus:border-accent-primary/40 text-sm transition-all"
+          />
+        </div>
+        <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar sm:max-w-xs md:max-w-md">
+          <button
+            onClick={() => setFilterTag(null)}
+            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-all border ${!filterTag ? 'bg-accent-primary text-white border-accent-primary' : 'bg-bg-surface border-border-subtle text-fg-muted hover:bg-bg-base'}`}
+          >
+            All Tags
+          </button>
+          {allTags.map(tag => (
+            <button
+              key={tag as string}
+              onClick={() => setFilterTag(filterTag === tag ? null : tag as string)}
+              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-all border ${filterTag === tag ? 'bg-accent-primary text-white border-accent-primary' : 'bg-bg-surface border-border-subtle text-fg-muted hover:bg-bg-base'}`}
+            >
+              #{tag as string}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        {filteredMoments.length === 0 ? (
+          <div className="text-center py-20 bg-bg-surface/30 rounded-[2.5rem] border border-dashed border-border-subtle">
+            <Calendar size={48} className="mx-auto mb-4 text-fg-muted opacity-20" />
+            <p className="text-fg-muted font-medium">Nothing logged here. Peace acquired? ✨</p>
+          </div>
+        ) : (
+          filteredMoments.map((moment: MomentEntry) => (
+            <motion.div
+              layout
+              key={moment.id}
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="group relative bg-bg-surface border border-border-subtle rounded-3xl p-5 hover:border-accent-primary/20 transition-all hover:shadow-lg flex items-center gap-5"
+            >
+              <div className={`w-12 h-12 rounded-2xl shrink-0 flex items-center justify-center transition-colors ${moment.type === 'negative' ? 'bg-[#FF4F4F]/10 text-[#FF4F4F]' : 'bg-[#4FFF4F]/10 text-green-600'}`}>
+                {moment.type === 'negative' ? <Frown size={24} /> : <Smile size={24} />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-3 mb-0.5">
+                  <h5 className="text-base font-black tracking-tight text-fg-base truncate uppercase italic">“{moment.title}”</h5>
+                  <p className="text-[10px] font-bold text-fg-muted tabular-nums">
+                    {new Date(moment.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                </div>
+                {moment.note && <p className="text-xs text-fg-muted mb-3 line-clamp-1 italic">{moment.note}</p>}
+                <div className="flex flex-wrap gap-2">
+                  {moment.tags.map(tag => (
+                    <span key={tag} className="text-[9px] font-bold uppercase tracking-widest text-accent-primary bg-accent-primary/10 px-2.5 py-1 rounded-lg">
+                      #{tag}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <button
+                onClick={() => onDelete(moment.id)}
+                className="opacity-0 group-hover:opacity-100 p-2 text-fg-muted hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-all"
+              >
+                <Trash2 size={18} />
+              </button>
+            </motion.div>
+          ))
+        )}
+      </div>
     </div>
   );
 }

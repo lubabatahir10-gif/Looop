@@ -44,8 +44,18 @@ export interface ClassSection {
   updatedAt: number;
 }
 
+export interface MomentEntry {
+  id: string;
+  type: 'negative' | 'positive'; // 'negative' for Pissed Me Off, 'positive' for Made Me Smile
+  title: string;
+  note?: string;
+  tags: string[];
+  createdAt: number;
+}
+
 export interface AppData {
   profile: UserProfile;
   tasks: Task[];
   sections: ClassSection[];
+  moments: MomentEntry[];
 }
