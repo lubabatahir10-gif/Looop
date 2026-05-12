@@ -28,9 +28,13 @@ import {
   Search,
   Tag,
   Calendar,
-  Filter
+  Filter,
+  RefreshCw,
+  Skull,
+  Zap,
+  Dices
 } from 'lucide-react';
-import { Task, ClassSection, UserProfile, Status, AppData, Student, TrackerCategory, ThemeMode, ColorTheme, MomentEntry } from './types';
+import { Task, ClassSection, UserProfile, Status, AppData, Student, TrackerCategory, ThemeMode, ColorTheme, MomentEntry, ChaosDecision } from './types';
 import { SALUTATIONS, TASK_TEMPLATES, THEME_MODES, COLOR_THEMES, MOTIVATING_DESCRIPTIONS } from './constants';
 
 const STORAGE_KEY = 'loooop_data_v1';
@@ -45,10 +49,32 @@ const INITIAL_DATA: AppData = {
   },
   tasks: [],
   sections: [],
-  moments: []
+  moments: [],
+  chaosHistory: []
 };
 
 // --- Components ---
+
+const Logo = ({ size = 24, className = "" }: { size?: number; className?: string }) => (
+  <svg 
+    width={size} 
+    height={size} 
+    viewBox="0 0 100 100" 
+    fill="none" 
+    xmlns="http://www.w3.org/2000/svg"
+    className={className}
+  >
+    <path 
+      d="M30 45 C 20 20, 50 20, 50 45 C 50 70, 80 70, 80 45 C 80 20, 50 20, 50 45" 
+      stroke="currentColor" 
+      strokeWidth="8" 
+      strokeLinecap="round" 
+    />
+    <circle cx="40" cy="75" r="5" fill="currentColor" />
+    <circle cx="60" cy="75" r="5" fill="currentColor" />
+    <line x1="45" y1="85" x2="55" y2="85" stroke="currentColor" strokeWidth="6" strokeLinecap="round" />
+  </svg>
+);
 
 const Button = ({ children, onClick, variant = 'primary', className = '', type = 'button', disabled = false }: any) => {
   const variants: any = {
@@ -134,11 +160,12 @@ export default function App() {
     if (!parsed.tasks) parsed.tasks = [];
     if (!parsed.sections) parsed.sections = [];
     if (!parsed.moments) parsed.moments = [];
+    if (!parsed.chaosHistory) parsed.chaosHistory = [];
     
     return parsed;
   });
 
-  const [activeTab, setActiveTab] = useState<'tasks' | 'notebooks' | 'moments' | 'settings' | 'profile'>('tasks');
+  const [activeTab, setActiveTab] = useState<'tasks' | 'notebooks' | 'moments' | 'chaos' | 'settings' | 'profile'>('tasks');
   const [isSetup, setIsSetup] = useState(!data.profile.name);
   const [motivatingQuote, setMotivatingQuote] = useState('');
 
@@ -285,6 +312,21 @@ export default function App() {
     setData(prev => ({ ...prev, moments: (prev.moments || []).filter(m => m.id !== id) }));
   };
 
+  const addChaosDecision = (question: string, choices: string[], winner: string) => {
+    const newDecision: ChaosDecision = {
+      id: Math.random().toString(36).substr(2, 9),
+      question,
+      choices,
+      winner,
+      createdAt: Date.now()
+    };
+    setData(prev => ({ ...prev, chaosHistory: [newDecision, ...(prev.chaosHistory || [])].slice(0, 20) }));
+  };
+
+  const deleteChaosDecision = (id: string) => {
+    setData(prev => ({ ...prev, chaosHistory: (prev.chaosHistory || []).filter(d => d.id !== id) }));
+  };
+
   if (isSetup) {
     return (
       <div className="min-h-screen flex items-center justify-center p-6 bg-bg-base text-fg-base">
@@ -295,11 +337,7 @@ export default function App() {
         >
           <div className="flex justify-center mb-8">
             <div className="w-16 h-16 bg-accent-primary/10 rounded-3xl flex items-center justify-center text-accent-primary">
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 4c-4.418 0-8 3.582-8 8s3.582 8 8 8 8-3.582 8-8" />
-                <path d="M20 12c0-4.418-3.582-8-8-8" opacity="0.3" />
-                <circle cx="12" cy="12" r="2.5" fill="currentColor" />
-              </svg>
+              <Logo size={40} />
             </div>
           </div>
           
@@ -351,11 +389,7 @@ export default function App() {
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-accent-primary text-white rounded-2xl flex items-center justify-center">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 4c-4.418 0-8 3.582-8 8s3.582 8 8 8 8-3.582 8-8" />
-                <path d="M20 12c0-4.418-3.582-8-8-8" opacity="0.5" />
-                <circle cx="12" cy="12" r="2" fill="currentColor" />
-              </svg>
+              <Logo size={24} />
             </div>
             <h1 className="text-xl font-bold tracking-tight">loooop</h1>
           </div>
@@ -407,6 +441,13 @@ export default function App() {
               onDelete={deleteMoment} 
             />
           )}
+          {activeTab === 'chaos' && (
+            <ChaosView 
+              data={data} 
+              onAdd={addChaosDecision} 
+              onDelete={deleteChaosDecision} 
+            />
+          )}
           {activeTab === 'settings' && (
             <SettingsView 
               data={data} 
@@ -428,6 +469,7 @@ export default function App() {
         <NavButton active={activeTab === 'tasks'} onClick={() => setActiveTab('tasks')} icon={<CheckSquare size={18} />} label="Tasks" />
         <NavButton active={activeTab === 'notebooks'} onClick={() => setActiveTab('notebooks')} icon={<BookOpen size={18} />} label="Notebooks" />
         <NavButton active={activeTab === 'moments'} onClick={() => setActiveTab('moments')} icon={<MessageSquare size={18} />} label="Moments" />
+        <NavButton active={activeTab === 'chaos'} onClick={() => setActiveTab('chaos')} icon={<Zap size={18} />} label="Chaos 💀" />
         <NavButton active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} icon={<SettingsIcon size={18} />} label="Settings" />
       </nav>
     </div>
@@ -1518,6 +1560,251 @@ function MomentsView({ data, onAdd, onDelete }: any) {
             </motion.div>
           ))
         )}
+      </div>
+    </div>
+  );
+}
+
+function ChaosView({ data, onAdd, onDelete }: any) {
+  const [question, setQuestion] = useState('');
+  const [choices, setChoices] = useState(['', '']);
+  const [isDeciding, setIsDeciding] = useState(false);
+  const [winner, setWinner] = useState<string | null>(null);
+  const [loadingText, setLoadingText] = useState('');
+
+  const loadingTexts = [
+    "consulting the universe…",
+    "this is so unserious",
+    "terrible options honestly",
+    "yk what…",
+    "counting to 3 in Gen Z...",
+    "slaying the decision tree...",
+    "vibe checking the results...",
+    "manifesting a choice...",
+    "checking the cards"
+  ];
+
+  const handleAddChoice = () => {
+    setChoices([...choices, '']);
+  };
+
+  const handleRemoveChoice = (index: number) => {
+    if (choices.length > 2) {
+      setChoices(choices.filter((_, i) => i !== index));
+    }
+  };
+
+  const handleChoiceChange = (index: number, value: string) => {
+    const newChoices = [...choices];
+    newChoices[index] = value;
+    setChoices(newChoices);
+  };
+
+  const handleDecide = () => {
+    if (!question.trim() || choices.filter(c => c.trim()).length < 2) return;
+    
+    setIsDeciding(true);
+    setWinner(null);
+    let count = 0;
+    const interval = setInterval(() => {
+      setLoadingText(loadingTexts[Math.floor(Math.random() * loadingTexts.length)]);
+      count++;
+      if (count > 6) {
+        clearInterval(interval);
+        const validChoices = choices.filter(c => c.trim());
+        const picked = validChoices[Math.floor(Math.random() * validChoices.length)];
+        setWinner(picked);
+        setIsDeciding(false);
+        onAdd(question, validChoices, picked);
+      }
+    }, 600);
+  };
+
+  const reroll = () => {
+    handleDecide();
+  };
+
+  const reset = () => {
+    setQuestion('');
+    setChoices(['', '']);
+    setWinner(null);
+  };
+
+  const history = data.chaosHistory || [];
+
+  return (
+    <div className="space-y-10 pb-20">
+      <div className="space-y-1">
+        <h3 className="text-3xl font-black tracking-tighter italic">Chaos Decide 💀</h3>
+        <p className="text-fg-muted font-bold uppercase tracking-widest text-[10px]">Let the universe handle your mid-life crisis.</p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-10">
+        <div className="lg:col-span-3 space-y-8">
+          <Card className="p-8 border border-border-subtle bg-bg-surface space-y-8 shadow-xl">
+            <div className="space-y-3">
+              <label className="text-[10px] font-black uppercase tracking-[0.2em] text-fg-muted px-1">The Situation / Question</label>
+              <input 
+                value={question}
+                onChange={e => setQuestion(e.target.value)}
+                placeholder="What should I do? (wrong answers only)"
+                className="w-full text-2xl font-black bg-transparent border-b-2 border-border-subtle py-2 focus:border-accent-primary outline-none transition-colors"
+              />
+            </div>
+
+            <div className="space-y-4">
+              <label className="text-[10px] font-black uppercase tracking-[0.2em] text-fg-muted px-1">Multiple Choices (Help me)</label>
+              <div className="space-y-3">
+                <AnimatePresence mode="popLayout">
+                  {choices.map((choice, index) => (
+                    <motion.div 
+                      key={index}
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, scale: 0.9 }}
+                      className="flex gap-3"
+                    >
+                      <div className="flex-1 relative group">
+                        <input 
+                          value={choice}
+                          onChange={e => handleChoiceChange(index, e.target.value)}
+                          placeholder={`Option ${index + 1}`}
+                          className="w-full bg-bg-base border border-border-subtle rounded-2xl px-6 py-4 outline-none focus:border-accent-primary/40 text-sm font-bold transition-all"
+                        />
+                        <div className="absolute left-0 top-0 h-full w-1 bg-accent-primary/10 rounded-l-2xl group-focus-within:bg-accent-primary transition-colors" />
+                      </div>
+                      <button 
+                        onClick={() => handleRemoveChoice(index)}
+                        disabled={choices.length <= 2}
+                        className="w-14 h-14 rounded-2xl bg-bg-base border border-border-subtle text-fg-muted hover:text-red-500 hover:bg-red-500/10 flex items-center justify-center transition-all disabled:opacity-20"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+                
+                <button 
+                  onClick={handleAddChoice}
+                  className="w-full py-4 rounded-[2rem] border border-dashed border-border-subtle text-fg-muted hover:text-accent-primary hover:border-accent-primary/40 hover:bg-accent-primary/5 transition-all font-bold text-xs uppercase tracking-widest flex items-center justify-center gap-2"
+                >
+                  <Plus size={16} />
+                  Add more chaos
+                </button>
+              </div>
+            </div>
+
+            <div className="pt-4">
+              <AnimatePresence mode="wait">
+                {isDeciding ? (
+                  <motion.div
+                    key="loading"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="w-full py-6 flex flex-col items-center justify-center gap-4 bg-accent-primary/5 rounded-[2.5rem] border border-accent-primary/20"
+                  >
+                    <div className="flex gap-1.5">
+                      {[0, 1, 2].map(i => (
+                        <motion.div 
+                          key={i}
+                          animate={{ scale: [1, 1.5, 1], opacity: [0.5, 1, 0.5] }}
+                          transition={{ repeat: Infinity, duration: 0.8, delay: i * 0.2 }}
+                          className="w-2 h-2 rounded-full bg-accent-primary"
+                        />
+                      ))}
+                    </div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.3em] text-accent-primary italic">{loadingText}</p>
+                  </motion.div>
+                ) : winner ? (
+                  <motion.div 
+                    key="result"
+                    initial={{ scale: 0.9, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    className="w-full p-10 bg-bg-base border-2 border-accent-primary rounded-[2.5rem] text-center space-y-6 shadow-2xl"
+                  >
+                    <div className="space-y-2">
+                       <p className="text-[10px] font-black uppercase tracking-[0.4em] text-fg-muted italic">Universe Picked:</p>
+                       <h2 className="text-4xl font-black tracking-tight text-accent-primary uppercase italic break-words">{winner} won.</h2>
+                    </div>
+                    <p className="text-xs font-bold text-fg-muted italic">Congratulations I guess. It is what it is.</p>
+                    <div className="flex gap-3 justify-center">
+                      <button 
+                        onClick={reroll}
+                        className="px-6 py-3 bg-accent-primary text-white rounded-2xl flex items-center gap-2 text-xs font-black uppercase tracking-widest shadow-lg shadow-accent-primary/30 active:scale-95 transition-all"
+                      >
+                        <RefreshCw size={16} />
+                        Do it again 😭
+                      </button>
+                      <button 
+                        onClick={reset}
+                        className="px-6 py-3 bg-bg-surface border border-border-subtle text-fg-muted rounded-2xl flex items-center gap-2 text-xs font-black uppercase tracking-widest hover:text-fg-base active:scale-95 transition-all"
+                      >
+                        Reset
+                      </button>
+                    </div>
+                  </motion.div>
+                ) : (
+                  <button 
+                    onClick={handleDecide}
+                    disabled={!question.trim() || choices.filter(c => c.trim()).length < 2}
+                    className="w-full py-6 bg-accent-primary text-white rounded-[2.5rem] font-black text-lg tracking-tighter italic flex items-center justify-center gap-4 hover:scale-[1.02] active:scale-95 transition-all shadow-xl shadow-accent-primary/20 hover:shadow-accent-primary/40 disabled:opacity-30 disabled:hover:scale-100 disabled:shadow-none"
+                  >
+                    <Zap size={24} fill="currentColor" />
+                    {question.length > 20 ? "PICK MY FATE" : "BRO DECIDE FOR ME"}
+                  </button>
+                )}
+              </AnimatePresence>
+            </div>
+          </Card>
+        </div>
+
+        <div className="lg:col-span-2 space-y-6">
+          <div className="flex items-center gap-3 px-2">
+            <Skull size={20} className="text-fg-muted" />
+            <h4 className="text-sm font-black uppercase tracking-[0.2em] text-fg-muted">Past Traumas</h4>
+          </div>
+
+          <div className="space-y-4 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
+            {history.length === 0 ? (
+               <div className="p-10 border border-dashed border-border-subtle rounded-[2rem] text-center space-y-4">
+                  <Dices size={32} className="mx-auto text-fg-muted/20" />
+                  <p className="text-[10px] font-bold text-fg-muted uppercase tracking-widest leading-loose">No decisions recorded.<br/>Live your life I guess.</p>
+               </div>
+            ) : (
+              history.map((item: ChaosDecision) => (
+                <motion.div 
+                  layout
+                  key={item.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="group bg-bg-surface border border-border-subtle p-5 rounded-3xl hover:border-accent-primary/30 transition-all shadow-sm"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="space-y-2 flex-1 min-w-0">
+                      <p className="text-[10px] font-bold text-[#4F8CFF] uppercase tracking-widest">{item.question}</p>
+                      <h5 className="text-base font-black tracking-tight text-fg-base italic uppercase truncate">“{item.winner}”</h5>
+                      <div className="flex flex-wrap gap-1.5 opacity-40 group-hover:opacity-70 transition-opacity">
+                        {item.choices.slice(0, 3).map((choice, i) => (
+                          <span key={i} className="text-[9px] font-bold text-fg-muted bg-bg-base px-2 py-0.5 rounded-lg">
+                            {choice}
+                          </span>
+                        ))}
+                        {item.choices.length > 3 && <span className="text-[9px] font-bold text-fg-muted">+{item.choices.length - 3}</span>}
+                      </div>
+                    </div>
+                    <button 
+                      onClick={() => onDelete(item.id)}
+                      className="opacity-0 group-hover:opacity-100 p-2 text-fg-muted hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-all"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </motion.div>
+              ))
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -53,9 +53,18 @@ export interface MomentEntry {
   createdAt: number;
 }
 
+export interface ChaosDecision {
+  id: string;
+  question: string;
+  choices: string[];
+  winner: string;
+  createdAt: number;
+}
+
 export interface AppData {
   profile: UserProfile;
   tasks: Task[];
   sections: ClassSection[];
   moments: MomentEntry[];
+  chaosHistory: ChaosDecision[];
 }
