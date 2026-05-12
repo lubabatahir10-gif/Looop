@@ -32,7 +32,9 @@ import {
   RefreshCw,
   Skull,
   Zap,
-  Dices
+  Dices,
+  Copy,
+  Share2
 } from 'lucide-react';
 import { Task, ClassSection, UserProfile, Status, AppData, Student, TrackerCategory, ThemeMode, ColorTheme, MomentEntry, ChaosDecision } from './types';
 import { SALUTATIONS, TASK_TEMPLATES, THEME_MODES, COLOR_THEMES, MOTIVATING_DESCRIPTIONS } from './constants';
@@ -168,6 +170,13 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'tasks' | 'notebooks' | 'moments' | 'chaos' | 'settings' | 'profile'>('tasks');
   const [isSetup, setIsSetup] = useState(!data.profile.name);
   const [motivatingQuote, setMotivatingQuote] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    // Initial entrance delay
+    const timer = setTimeout(() => setIsLoading(false), 2000);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Randomize motivating quote when entering profile
   useEffect(() => {
@@ -384,6 +393,28 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-bg-base pb-32 transition-colors duration-500">
+      <AnimatePresence>
+        {isLoading && (
+          <motion.div 
+            initial={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 1.2, ease: "easeInOut" }}
+            className="fixed inset-0 z-[100] bg-bg-base flex flex-col items-center justify-center p-8 text-center"
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.5, duration: 1 }}
+              className="space-y-8"
+            >
+              <Logo size={48} className="mx-auto text-accent-primary opacity-20" />
+              <p className="text-[11px] font-bold text-fg-muted uppercase tracking-[0.4em] leading-loose max-w-[200px] mx-auto opacity-60">
+                if you’re here, you’re basically my person ✨
+              </p>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       {/* Header */}
       <header className="bg-bg-surface/80 backdrop-blur-md border-b border-border-subtle px-6 py-4 sticky top-0 z-40">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
@@ -1811,6 +1842,32 @@ function ChaosView({ data, onAdd, onDelete }: any) {
 }
 
 function SettingsView({ data, onUpdateProfile }: any) {
+  const [copied, setCopied] = useState(false);
+
+  const handleShare = async () => {
+    const shareData = {
+      title: 'loooop',
+      text: 'Check out loooop - a super cute productivity companion! ✨',
+      url: window.location.origin,
+    };
+
+    if (navigator.share && navigator.canShare && navigator.canShare(shareData)) {
+      try {
+        await navigator.share(shareData);
+      } catch (err) {
+        console.error('Error sharing:', err);
+      }
+    } else {
+      copyToClipboard();
+    }
+  };
+
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(window.location.origin);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   return (
     <div className="space-y-10">
       <div className="space-y-1">
@@ -1819,20 +1876,22 @@ function SettingsView({ data, onUpdateProfile }: any) {
       </div>
 
       <div className="grid md:grid-cols-2 gap-8">
-        {/* Profile Card */}
-        <Card className="p-8 space-y-8 border border-border-subtle bg-bg-surface">
-           <div className="space-y-6">
-              <div className="flex items-center gap-4 border-b border-border-subtle pb-6">
-                 <div className="w-16 h-16 bg-accent-primary/10 rounded-[2rem] flex items-center justify-center text-accent-primary text-xl">
-                    <User size={32} />
-                 </div>
-                 <div>
-                    <h4 className="text-xl font-bold">{data.profile.name}</h4>
-                    <p className="text-xs text-fg-muted font-bold uppercase tracking-widest">{data.profile.salutation}</p>
-                 </div>
-              </div>
-           </div>
-        </Card>
+        <div className="space-y-8">
+          {/* Profile Card */}
+          <Card className="p-8 space-y-8 border border-border-subtle bg-bg-surface">
+            <div className="space-y-6">
+                <div className="flex items-center gap-4 border-b border-border-subtle pb-6">
+                  <div className="w-16 h-16 bg-accent-primary/10 rounded-[2rem] flex items-center justify-center text-accent-primary text-xl">
+                      <User size={32} />
+                  </div>
+                  <div>
+                      <h4 className="text-xl font-bold">{data.profile.name}</h4>
+                      <p className="text-xs text-fg-muted font-bold uppercase tracking-widest">{data.profile.salutation}</p>
+                  </div>
+                </div>
+            </div>
+          </Card>
+        </div>
 
         {/* Theme Settings */}
         <div className="space-y-8">
@@ -1873,7 +1932,31 @@ function SettingsView({ data, onUpdateProfile }: any) {
         </div>
       </div>
 
-      <div className="flex justify-center pt-10">
+      <div className="space-y-12 pt-16 border-t border-border-subtle">
+        <div className="max-w-md mx-auto space-y-6 text-center">
+            <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-fg-muted italic">share loooop</h4>
+            <div className="flex gap-3 justify-center">
+              <button 
+                onClick={handleShare}
+                className="px-8 py-3 bg-accent-primary text-white rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center gap-2 shadow-lg shadow-accent-primary/20 hover:scale-[1.02] active:scale-95 transition-all"
+              >
+                <Share2 size={14} />
+                Share link
+              </button>
+              <button 
+                onClick={copyToClipboard}
+                className={`px-8 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center gap-2 border transition-all active:scale-95 ${copied ? 'bg-green-500 border-green-500 text-white' : 'bg-bg-surface border-border-subtle text-fg-muted hover:bg-bg-base'}`}
+              >
+                {copied ? <CheckCircle2 size={14} /> : <Copy size={14} />}
+                {copied ? 'Copied!' : 'Copy Link'}
+              </button>
+            </div>
+            <p className="text-[10px] font-bold text-fg-muted uppercase tracking-widest opacity-30 pt-4">
+              if you’re here, you’re basically my person ✨
+            </p>
+        </div>
+
+        <div className="flex justify-center">
          <button 
            onClick={() => {
              if (confirm('Are you sure you want to reset all data and settings?')) {
@@ -1885,6 +1968,7 @@ function SettingsView({ data, onUpdateProfile }: any) {
          >
            Reset Workspace
          </button>
+      </div>
       </div>
     </div>
   );
